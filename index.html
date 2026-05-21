@@ -1032,11 +1032,31 @@ function buildSparklinePath(data) {
 
 // ── CONNECT ──
 // ── MetaApi REAL ENGINE ──
-const META_BASE = 'https://mt-client-api-v1.london.agiliumtrade.ai';
+// Base URLs per region (Provisioning API + Client API)
+const META_REGIONS = {
+  'vint-hill':  'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
+  'new-york':   'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
+  'london':     'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
+  'singapore':  'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
+  'sydney':     'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
+  'frankfurt':  'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
+};
+
+const META_CLIENT_REGIONS = {
+  'vint-hill':  'https://mt-client-api-v1.vint-hill.agiliumtrade.ai',
+  'new-york':   'https://mt-client-api-v1.new-york.agiliumtrade.ai',
+  'london':     'https://mt-client-api-v1.london.agiliumtrade.ai',
+  'singapore':  'https://mt-client-api-v1.singapore.agiliumtrade.ai',
+  'sydney':     'https://mt-client-api-v1.sydney.agiliumtrade.ai',
+  'frankfurt':  'https://mt-client-api-v1.frankfurt.agiliumtrade.ai',
+};
+
 let metaToken = '';
 let metaAccount = '';
+let metaProvBase = '';
+let metaClientBase = '';
 
-async function metaFetch(path, method = 'GET', body = null) {
+async function metaFetch(base, path, method = 'GET', body = null) {
   const opts = {
     method,
     headers: {
@@ -1045,7 +1065,7 @@ async function metaFetch(path, method = 'GET', body = null) {
     }
   };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${META_BASE}${path}`, opts);
+  const res = await fetch(`${base}${path}`, opts);
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`${res.status}: ${err}`);
@@ -1055,10 +1075,9 @@ async function metaFetch(path, method = 'GET', body = null) {
 
 async function fetchCandles(symbol, timeframe = '1m', count = 50) {
   try {
-    const tf = timeframe === '1m' ? '1m' :
-               timeframe === '5m' ? '5m' :
-               timeframe === '15m' ? '15m' : '1h';
+    const tf = { '1m':'1m', '5m':'5m', '15m':'15m', '1h':'1h' }[timeframe] || '1m';
     const data = await metaFetch(
+      metaClientBase,
       `/users/current/accounts/${metaAccount}/historical-market-data/symbols/${symbol}/timeframes/${tf}/candles?limit=${count}`
     );
     return Array.isArray(data) ? data : [];
@@ -1071,6 +1090,7 @@ async function fetchCandles(symbol, timeframe = '1m', count = 50) {
 async function fetchPrice(symbol) {
   try {
     const data = await metaFetch(
+      metaClientBase,
       `/users/current/accounts/${metaAccount}/symbols/${symbol}/current-price?keepSubscription=false`
     );
     return data;
@@ -1085,9 +1105,10 @@ async function placeOrder(symbol, type, lot) {
       symbol,
       actionType: type === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
       volume: lot,
-      comment: 'AlgoTrade Pro MA Strategy'
+      comment: 'AlgoTrade Pro MA'
     };
     const res = await metaFetch(
+      metaClientBase,
       `/users/current/accounts/${metaAccount}/trade`,
       'POST', order
     );
@@ -1099,7 +1120,7 @@ async function placeOrder(symbol, type, lot) {
 }
 
 async function handleConnect() {
-  metaToken = document.getElementById('apiToken').value.trim();
+  metaToken  = document.getElementById('apiToken').value.trim();
   metaAccount = document.getElementById('accountId').value.trim();
   const region = document.getElementById('serverRegion').value;
 
@@ -1109,32 +1130,55 @@ async function handleConnect() {
     return;
   }
 
+  // Set correct base URLs
+  metaProvBase   = META_REGIONS[region]        || META_REGIONS['vint-hill'];
+  metaClientBase = META_CLIENT_REGIONS[region] || META_CLIENT_REGIONS['london'];
+
   saveSettings();
   addLog('info', '🔌 جاري الاتصال بـ MetaApi...');
   showConnStatus('info', [
     '🔌 جاري التحقق من الحساب...',
+    `📍 Region: ${region}`,
     `🔑 Account: ${metaAccount.slice(0,8)}...`
   ]);
 
   try {
-    // Test connection by fetching account info
-    const info = await metaFetch(`/users/current/accounts/${metaAccount}`);
-    const broker = info.broker || info.name || 'Unknown';
-    const balance = info.balance !== undefined ? `$${info.balance.toFixed(2)}` : 'N/A';
-    const server = info.server || 'N/A';
+    // Step 1: جلب معلومات الحساب من Provisioning API
+    const info = await metaFetch(
+      metaProvBase,
+      `/users/current/accounts/${metaAccount}`
+    );
+
+    const broker  = info.broker  || info.name   || 'Unknown';
+    const server  = info.server  || info.quoteStreamingIntervalInSeconds || 'N/A';
+    const state   = info.state   || 'DEPLOYED';
 
     connected = true;
     setStatus(true);
 
-    addLog('buy', `✅ تم الاتصال بنجاح! ${broker}`);
-    addLog('info', `💰 الرصيد: ${balance} | السيرفر: ${server}`);
+    addLog('buy',  `✅ تم الاتصال! ${broker}`);
+    addLog('info', `🖥️ Server: ${server} | State: ${state}`);
+    addLog('info', `📍 Region: ${region} | ${metaAccount.slice(0,8)}...`);
 
     showConnStatus('success', [
       `✅ متصل بنجاح — ${broker}`,
-      `💰 الرصيد: ${balance}`,
       `🖥️ Server: ${server}`,
-      `🧪 ${accountType === 'real' ? '⚠️ حساب حقيقي' : 'حساب تجريبي'}`
+      `📍 ${region} | Account: ${metaAccount.slice(0,8)}...`,
+      `${accountType === 'real' ? '⚠️ حساب حقيقي' : '🧪 حساب تجريبي'}`
     ]);
+
+    // Step 2: جلب معلومات التداول (الرصيد)
+    try {
+      const trading = await metaFetch(
+        metaClientBase,
+        `/users/current/accounts/${metaAccount}/account-information`
+      );
+      if (trading.balance !== undefined) {
+        addLog('info', `💰 الرصيد: $${trading.balance.toFixed(2)} | Equity: $${(trading.equity||0).toFixed(2)}`);
+      }
+    } catch(e2) {
+      addLog('warn', `⚠️ لم يتم جلب الرصيد: ${e2.message}`);
+    }
 
     addLog('sys', '🟢 النظام جاهز للتداول الحقيقي');
 
@@ -1145,7 +1189,8 @@ async function handleConnect() {
     showConnStatus('error', [
       '❌ فشل الاتصال',
       `السبب: ${e.message}`,
-      '💡 تأكد من صحة الـ Token والـ Account ID'
+      '💡 تأكد من الـ Account ID من صفحة Accounts في MetaApi',
+      '💡 تأكد أن الحساب Deployed وليس Undeployed'
     ]);
   }
 }
