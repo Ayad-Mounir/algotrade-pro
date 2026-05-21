@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlgoTrade Pro — بوت التداول الذكي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050810;
+    --surface: #0b0f1a;
+    --surface2: #111827;
+    --border: #1e2a3a;
+    --green: #00ff88;
+    --green-dim: #00ff8830;
+    --red: #ff3d5a;
+    --red-dim: #ff3d5a30;
+    --gold: #ffc340;
+    --gold-dim: #ffc34020;
+    --blue: #4d9fff;
+    --blue-dim: #4d9fff20;
+    --text: #e2e8f0;
+    --text-muted: #4a5568;
+    --text-soft: #94a3b8;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Cairo', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Glow orb */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px;
+    right: -200px;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, #00ff8815 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin-bottom: 20px;
+    animation: fadeDown 0.5s ease;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--green), var(--blue));
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-text span { color: var(--green); }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-soft);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: all 0.3s;
+  }
+
+  .status-dot.connected {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  .status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── MAIN GRID ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 16px;
+    animation: fadeUp 0.6s ease 0.1s both;
+  }
+
+  /* ── CARD ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    transition: border-color 0.3s;
+  }
+
+  .card:hover { border-color: #2a3a4a; }
+
+  .card-title {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title::before {
+    content: '';
+    width: 3px;
+    height: 14px;
+    background: var(--green);
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  /* ── INPUT ── */
+  .field {
+    margin-bottom: 14px;
+  }
+
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-soft);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    direction: ltr;
+    text-align: left;
+  }
+
+  input:focus, select:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px var(--green-dim);
+  }
+
+  select option { background: var(--surface2); }
+
+  /* ── BUTTON ── */
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 4px;
+  }
+
+  .btn-connect {
+    background: linear-gradient(135deg, var(--green), #00cc6a);
+    color: #000;
+  }
+
+  .btn-connect:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px var(--green-dim);
+  }
+
+  .btn-stop {
+    background: var(--red-dim);
+    color: var(--red);
+    border: 1px solid var(--red);
+  }
+
+  .btn-start {
+    background: linear-gradient(135deg, var(--blue), #2563eb);
+    color: #fff;
+  }
+
+  .btn-start:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px var(--blue-dim);
+  }
+
+  /* ── SYMBOL CHECKBOXES ── */
+  .symbols-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .symbol-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .symbol-item:hover { border-color: var(--blue); }
+
+  .symbol-item.active {
+    border-color: var(--green);
+    background: var(--green-dim);
+  }
+
+  .symbol-item input[type="checkbox"] { display: none; }
+
+  .sym-check {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .symbol-item.active .sym-check {
+    background: var(--green);
+    border-color: var(--green);
+    color: #000;
+    font-size: 10px;
+  }
+
+  .sym-info { flex: 1; }
+  .sym-name { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .sym-desc { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+  .sym-price {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-soft);
+  }
+
+  /* ── RIGHT PANEL ── */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── STATS ROW ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ── SIGNALS TABLE ── */
+  .signals-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .signals-table th {
+    padding: 8px 12px;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 400;
+  }
+
+  .signals-table td {
+    padding: 12px 12px;
+    border-bottom: 1px solid #0d1520;
+    vertical-align: middle;
+  }
+
+  .signals-table tr:last-child td { border-bottom: none; }
+
+  .signals-table tr { transition: background 0.2s; }
+  .signals-table tr:hover td { background: #ffffff05; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .badge-buy { background: var(--green-dim); color: var(--green); }
+  .badge-sell { background: var(--red-dim); color: var(--red); }
+  .badge-wait { background: var(--gold-dim); color: var(--gold); }
+
+  /* ── CONSOLE LOG ── */
+  .console {
+    background: #020507;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    height: 180px;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.8;
+  }
+
+  .console::-webkit-scrollbar { width: 4px; }
+  .console::-webkit-scrollbar-track { background: transparent; }
+  .console::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-line { display: flex; gap: 12px; }
+  .log-time { color: var(--text-muted); flex-shrink: 0; }
+  .log-buy { color: var(--green); }
+  .log-sell { color: var(--red); }
+  .log-info { color: var(--blue); }
+  .log-warn { color: var(--gold); }
+  .log-sys { color: var(--text-muted); }
+
+  /* ── MINI CHART ── */
+  .chart-area {
+    position: relative;
+    height: 100px;
+    overflow: hidden;
+  }
+
+  .chart-svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ── BOT TOGGLE ── */
+  .bot-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .bot-row .btn { margin: 0; }
+
+  /* ── STRATEGY PARAMS ── */
+  .params-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(10px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .new-row { animation: slideIn 0.3s ease; }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .params-row { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 500px) {
+    .symbols-grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ── BLINKING CURSOR ── */
+  .cursor {
+    display: inline-block;
+    width: 6px;
+    height: 12px;
+    background: var(--green);
+    animation: blink 1s infinite;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📈</div>
+      <div>
+        <div class="logo-text">Algo<span>Trade</span> Pro</div>
+        <div style="font-size:10px;color:var(--text-muted);font-family:var(--mono)">MetaApi MA20 Strategy</div>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="status-dot" id="mainDot"></div>
+      <span id="mainStatus">غير متصل</span>
+      <span style="color:var(--border)">|</span>
+      <span id="liveTime" style="color:var(--text-muted)"></span>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <div class="grid">
+
+    <!-- LEFT PANEL -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- CONNECTION CARD -->
+      <div class="card">
+        <div class="card-title">إعدادات الاتصال</div>
+
+        <div class="field">
+          <label>MetaApi Token</label>
+          <input type="password" id="apiToken" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+        </div>
+        <div class="field">
+          <label>Account ID</label>
+          <input type="text" id="accountId" placeholder="your-account-id" />
+        </div>
+        <div class="field">
+          <label>نوع الحساب</label>
+          <select id="accountType">
+            <option value="demo">🧪 Demo Account</option>
+            <option value="real">💰 Real Account</option>
+          </select>
+        </div>
+
+        <div class="bot-row">
+          <button class="btn btn-connect" onclick="handleConnect()">🔌 اتصال</button>
+          <button class="btn btn-stop" onclick="handleDisconnect()" style="width:auto;padding:12px 16px;">✕</button>
+        </div>
+      </div>
+
+      <!-- SYMBOLS CARD -->
+      <div class="card">
+        <div class="card-title">اختيار الأزواج</div>
+        <div class="symbols-grid" id="symbolsGrid">
+          <!-- injected by JS -->
+        </div>
+      </div>
+
+      <!-- STRATEGY CARD -->
+      <div class="card">
+        <div class="card-title">إعدادات الاستراتيجية</div>
+        <div class="params-row">
+          <div class="field" style="margin:0">
+            <label>MA Period</label>
+            <input type="number" id="maPeriod" value="20" min="5" max="200" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>Lot Size</label>
+            <input type="number" id="lotSize" value="0.01" step="0.01" min="0.01" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>Timeframe</label>
+            <select id="timeframe">
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+            </select>
+          </div>
+        </div>
+        <hr class="divider">
+        <button class="btn btn-start" id="botBtn" onclick="toggleBot()">▶ تشغيل البوت</button>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value" id="statTotal" style="color:var(--blue)">0</div>
+          <div class="stat-label">إجمالي الصفقات</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statBuy" style="color:var(--green)">0</div>
+          <div class="stat-label">شراء</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statSell" style="color:var(--red)">0</div>
+          <div class="stat-label">بيع</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statPairs" style="color:var(--gold)">0</div>
+          <div class="stat-label">أزواج نشطة</div>
+        </div>
+      </div>
+
+      <!-- SIGNALS TABLE -->
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="padding:16px 20px 0;">
+          <div class="card-title">الإشارات الحية</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="signals-table">
+            <thead>
+              <tr>
+                <th>الزوج</th>
+                <th>السعر الحالي</th>
+                <th>MA 20</th>
+                <th>الحالة</th>
+                <th>الإجراء</th>
+                <th>الوقت</th>
+              </tr>
+            </thead>
+            <tbody id="signalsBody">
+              <tr>
+                <td colspan="6" style="text-align:center;padding:30px;color:var(--text-muted);font-family:var(--mono)">
+                  في انتظار تشغيل البوت...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- MINI CHARTS ROW -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;" id="miniCharts">
+        <!-- injected by JS -->
+      </div>
+
+      <!-- CONSOLE -->
+      <div class="card" style="padding:0;">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+          <div class="card-title" style="margin:0">سجل النظام</div>
+          <button onclick="clearConsole()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;font-family:var(--mono)">مسح</button>
+        </div>
+        <div class="console" id="console">
+          <div class="log-line"><span class="log-time">00:00:00</span><span class="log-sys">▸ النظام جاهز. في انتظار الاتصال...</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ── DATA ──
+const SYMBOLS = [
+  { id: 'EURUSD', name: 'EUR/USD', desc: 'يورو / دولار', price: 1.0842 },
+  { id: 'XAUUSD', name: 'XAU/USD', desc: 'ذهب / دولار', price: 2348.50 },
+  { id: 'GBPUSD', name: 'GBP/USD', desc: 'جنيه / دولار', price: 1.2731 },
+  { id: 'BTCUSD', name: 'BTC/USD', desc: 'بيتكوين / دولار', price: 67450 },
+  { id: 'USDJPY', name: 'USD/JPY', desc: 'دولار / ين', price: 157.23 },
+  { id: 'NASDAQ', name: 'NAS100', desc: 'ناسداك', price: 19820.5 },
+];
+
+let selectedSymbols = new Set(['EURUSD', 'XAUUSD']);
+let connected = false;
+let botRunning = false;
+let botInterval = null;
+let stats = { total: 0, buy: 0, sell: 0 };
+let priceHistory = {};
+SYMBOLS.forEach(s => { priceHistory[s.id] = [s.price]; });
+
+// ── RENDER SYMBOLS ──
+function renderSymbols() {
+  const grid = document.getElementById('symbolsGrid');
+  grid.innerHTML = SYMBOLS.map(s => `
+    <label class="symbol-item ${selectedSymbols.has(s.id) ? 'active' : ''}" onclick="toggleSymbol('${s.id}')">
+      <div class="sym-check">${selectedSymbols.has(s.id) ? '✓' : ''}</div>
+      <div class="sym-info">
+        <div class="sym-name">${s.name}</div>
+        <div class="sym-desc">${s.desc}</div>
+      </div>
+      <div class="sym-price" id="price-${s.id}">${formatPrice(s.id, s.price)}</div>
+    </label>
+  `).join('');
+  document.getElementById('statPairs').textContent = selectedSymbols.size;
+}
+
+function toggleSymbol(id) {
+  if (selectedSymbols.has(id)) { selectedSymbols.delete(id); }
+  else { selectedSymbols.add(id); }
+  renderSymbols();
+  document.getElementById('statPairs').textContent = selectedSymbols.size;
+}
+
+// ── RENDER MINI CHARTS ──
+function renderMiniCharts() {
+  const container = document.getElementById('miniCharts');
+  const active = SYMBOLS.filter(s => selectedSymbols.has(s.id)).slice(0, 4);
+  container.style.gridTemplateColumns = `repeat(${Math.min(active.length, 4)}, 1fr)`;
+  container.innerHTML = active.map(s => {
+    const history = priceHistory[s.id] || [s.price];
+    const path = buildSparklinePath(history);
+    const last = history[history.length - 1];
+    const first = history[0];
+    const up = last >= first;
+    return `
+      <div class="card" style="padding:14px;">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-muted);margin-bottom:6px;">${s.name}</div>
+        <div style="font-family:var(--mono);font-size:14px;font-weight:600;color:${up ? 'var(--green)' : 'var(--red)'};">${formatPrice(s.id, last)}</div>
+        <div class="chart-area" style="height:50px;margin-top:8px;">
+          <svg class="chart-svg" viewBox="0 0 100 40" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="grad-${s.id}" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="${up ? '#00ff88' : '#ff3d5a'}" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="${up ? '#00ff88' : '#ff3d5a'}" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="${path.area}" fill="url(#grad-${s.id})"/>
+            <path d="${path.line}" fill="none" stroke="${up ? 'var(--green)' : 'var(--red)'}" stroke-width="1.5"/>
+          </svg>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function buildSparklinePath(data) {
+  if (data.length < 2) return { line: '', area: '' };
+  const mn = Math.min(...data), mx = Math.max(...data);
+  const range = mx - mn || 1;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * 100;
+    const y = 38 - ((v - mn) / range) * 36;
+    return `${x},${y}`;
+  });
+  const line = `M ${pts.join(' L ')}`;
+  const area = `M 0,40 L ${pts.join(' L ')} L 100,40 Z`;
+  return { line, area };
+}
+
+// ── CONNECT ──
+function handleConnect() {
+  const token = document.getElementById('apiToken').value;
+  const account = document.getElementById('accountId').value;
+  if (!token || !account) {
+    addLog('warn', '⚠️ يرجى إدخال الـ API Token و Account ID');
+    return;
+  }
+  addLog('info', `🔌 جاري الاتصال بـ MetaApi...`);
+  setTimeout(() => {
+    connected = true;
+    setStatus(true);
+    addLog('buy', `✅ تم الاتصال بنجاح! الحساب: ${account.slice(0, 8)}...`);
+    addLog('info', `📡 جاري مزامنة بيانات السوق...`);
+    setTimeout(() => addLog('sys', `🟢 النظام جاهز للتداول`), 1200);
+  }, 1800);
+}
+
+function handleDisconnect() {
+  connected = false;
+  botRunning = false;
+  if (botInterval) { clearInterval(botInterval); botInterval = null; }
+  setStatus(false);
+  updateBotBtn();
+  addLog('warn', '🔴 تم قطع الاتصال');
+}
+
+function setStatus(on) {
+  const dot = document.getElementById('mainDot');
+  const txt = document.getElementById('mainStatus');
+  dot.className = 'status-dot ' + (on ? 'connected' : 'error');
+  txt.textContent = on ? 'متصل' : 'غير متصل';
+}
+
+// ── BOT ──
+function toggleBot() {
+  if (!connected) { addLog('warn', '⚠️ يجب الاتصال أولاً'); return; }
+  botRunning = !botRunning;
+  updateBotBtn();
+  if (botRunning) {
+    addLog('info', `▶ تم تشغيل البوت على ${selectedSymbols.size} أزواج`);
+    runCycle();
+    botInterval = setInterval(runCycle, 5000);
+  } else {
+    clearInterval(botInterval);
+    botInterval = null;
+    addLog('warn', '⏹ تم إيقاف البوت');
+  }
+}
+
+function updateBotBtn() {
+  const btn = document.getElementById('botBtn');
+  btn.textContent = botRunning ? '⏹ إيقاف البوت' : '▶ تشغيل البوت';
+  btn.className = 'btn ' + (botRunning ? 'btn-stop' : 'btn-start');
+}
+
+function runCycle() {
+  const period = parseInt(document.getElementById('maPeriod').value) || 20;
+  const lot = parseFloat(document.getElementById('lotSize').value) || 0.01;
+  const rows = [];
+
+  selectedSymbols.forEach(id => {
+    const sym = SYMBOLS.find(s => s.id === id);
+    if (!sym) return;
+
+    // Simulate price movement
+    const last = priceHistory[id][priceHistory[id].length - 1];
+    const change = (Math.random() - 0.48) * last * 0.002;
+    const currentPrice = +(last + change).toFixed(id === 'BTCUSD' ? 0 : id === 'XAUUSD' ? 2 : 4);
+    priceHistory[id].push(currentPrice);
+    if (priceHistory[id].length > 40) priceHistory[id].shift();
+
+    // Calculate MA
+    const history = priceHistory[id];
+    const slice = history.slice(-period);
+    const ma = +(slice.reduce((a, b) => a + b, 0) / slice.length).toFixed(id === 'BTCUSD' ? 0 : id === 'XAUUSD' ? 2 : 4);
+
+    const diff = currentPrice - ma;
+    let action, badge, logType;
+    if (diff > ma * 0.0005) {
+      action = 'BUY'; badge = `<span class="badge badge-buy">🟢 شراء ${lot}</span>`; logType = 'buy';
+      stats.buy++; stats.total++;
+    } else if (diff < -ma * 0.0005) {
+      action = 'SELL'; badge = `<span class="badge badge-sell">🔴 بيع ${lot}</span>`; logType = 'sell';
+      stats.sell++; stats.total++;
+    } else {
+      action = 'WAIT'; badge = `<span class="badge badge-wait">⏳ انتظار</span>`; logType = 'sys';
+    }
+
+    // Update price in symbol list
+    const priceEl = document.getElementById(`price-${id}`);
+    if (priceEl) priceEl.textContent = formatPrice(id, currentPrice);
+
+    rows.push({ sym, currentPrice, ma, badge, action, logType });
+    if (action !== 'WAIT') addLog(logType, `${action} ${sym.name} @ ${formatPrice(id, currentPrice)} | MA: ${formatPrice(id, ma)} | Lot: ${lot}`);
+  });
+
+  // Update table
+  if (rows.length > 0) {
+    const tbody = document.getElementById('signalsBody');
+    tbody.innerHTML = rows.map(r => `
+      <tr class="new-row">
+        <td style="font-weight:700;font-family:var(--mono)">${r.sym.name}</td>
+        <td style="color:var(--text)">${formatPrice(r.sym.id, r.currentPrice)}</td>
+        <td style="color:var(--text-soft)">${formatPrice(r.sym.id, r.ma)}</td>
+        <td style="color:${r.currentPrice > r.ma ? 'var(--green)' : 'var(--red)'}; font-size:10px;">
+          ${r.currentPrice > r.ma ? '▲ فوق MA' : '▼ تحت MA'}
+        </td>
+        <td>${r.badge}</td>
+        <td style="color:var(--text-muted)">${getTime()}</td>
+      </tr>
+    `).join('');
+  }
+
+  // Update stats
+  document.getElementById('statTotal').textContent = stats.total;
+  document.getElementById('statBuy').textContent = stats.buy;
+  document.getElementById('statSell').textContent = stats.sell;
+
+  // Re-render charts
+  renderMiniCharts();
+}
+
+// ── CONSOLE ──
+function addLog(type, msg) {
+  const console_ = document.getElementById('console');
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `<span class="log-time">${getTime()}</span><span class="log-${type}">${msg}</span>`;
+  console_.appendChild(div);
+  console_.scrollTop = console_.scrollHeight;
+}
+
+function clearConsole() {
+  document.getElementById('console').innerHTML = '';
+  addLog('sys', '▸ تم مسح السجل');
+}
+
+// ── HELPERS ──
+function formatPrice(id, price) {
+  if (id === 'BTCUSD') return price.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (id === 'XAUUSD' || id === 'NASDAQ') return price.toFixed(2);
+  if (id === 'USDJPY') return price.toFixed(3);
+  return price.toFixed(4);
+}
+
+function getTime() {
+  return new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// ── LIVE CLOCK ──
+function updateClock() {
+  document.getElementById('liveTime').textContent = getTime();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── INIT ──
+renderSymbols();
+renderMiniCharts();
+</script>
+</body>
+</html>
