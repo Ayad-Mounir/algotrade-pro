@@ -2,15 +2,17 @@
 //  AlgoTrade Pro — Service Worker
 //  Update CACHE_VERSION on every new release
 // ─────────────────────────────────────────────
-const CACHE_VERSION = 'v1.0.0';
+const CACHE_VERSION = 'v1.1.0';
 const CACHE_NAME    = `algotrade-${CACHE_VERSION}`;
+const BASE_PATH     = '/algotrade-pro';
 
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  BASE_PATH + '/',
+  BASE_PATH + '/index.html',
+  BASE_PATH + '/manifest.json',
+  BASE_PATH + '/sw.js',
+  BASE_PATH + '/icons/icon-192.png',
+  BASE_PATH + '/icons/icon-512.png',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=Cairo:wght@300;400;600;700;900&display=swap'
 ];
 
@@ -60,7 +62,7 @@ self.addEventListener('fetch', event => {
           if (cached) return cached;
           // For navigation requests, return the main app
           if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
+            return caches.match(BASE_PATH + '/index.html');
           }
         });
       })
