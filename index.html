@@ -615,6 +615,159 @@
     .btn-save { width: 100%; }
   }
 
+
+  /* ── SYMBOL BROWSER ── */
+  .sym-browser-header {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+  }
+  .sym-search-wrap {
+    position: relative;
+    flex: 1;
+  }
+  .sym-search-wrap input {
+    width: 100%;
+    padding: 8px 12px 8px 32px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    direction: ltr;
+  }
+  .sym-search-wrap input:focus { border-color: var(--blue); }
+  .sym-search-icon {
+    position: absolute;
+    left: 10px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    pointer-events: none;
+  }
+  .sym-filter-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .sym-tab {
+    padding: 4px 10px;
+    font-size: 10px;
+    font-family: var(--mono);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+    color: var(--text-muted);
+    background: transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .sym-tab:hover { border-color: var(--blue); color: var(--blue); }
+  .sym-tab.active { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+  .sym-list {
+    max-height: 280px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-right: 2px;
+  }
+  .sym-list::-webkit-scrollbar { width: 4px; }
+  .sym-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .sym-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .sym-row:hover { border-color: var(--blue); }
+  .sym-row.active {
+    border-color: var(--green);
+    background: var(--green-dim);
+  }
+  .sym-row-check {
+    width: 15px; height: 15px;
+    border: 1.5px solid var(--border);
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .sym-row.active .sym-row-check {
+    background: var(--green);
+    border-color: var(--green);
+    color: #000;
+  }
+  .sym-row-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    flex: 1;
+    color: var(--text);
+  }
+  .sym-row-cat {
+    font-size: 9px;
+    font-family: var(--mono);
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text-muted);
+  }
+  .sym-browser-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+  }
+  .sym-select-all {
+    font-size: 10px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--mono);
+    transition: all 0.2s;
+  }
+  .sym-select-all:hover { border-color: var(--blue); color: var(--blue); }
+  .sym-empty {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .sym-loading {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-soft);
+    font-family: var(--mono);
+    font-size: 12px;
+    animation: pulse 1.5s infinite;
+  }
+  .sym-preconnect {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: var(--mono);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+  }
+
 </style>
 </head>
 <body>
@@ -749,9 +902,38 @@
 
       <!-- SYMBOLS CARD -->
       <div class="card">
-        <div class="card-title">اختيار الأزواج</div>
-        <div class="symbols-grid" id="symbolsGrid">
-          <!-- injected by JS -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="card-title" style="margin:0">اختيار الأزواج</div>
+          <span id="symCountBadge" style="font-size:10px;font-family:var(--mono);color:var(--text-muted);">—</span>
+        </div>
+
+        <!-- Search + Filter — يظهر فقط بعد الاتصال -->
+        <div id="symBrowserControls" style="display:none;">
+          <div class="sym-browser-header">
+            <div class="sym-search-wrap">
+              <span class="sym-search-icon">🔍</span>
+              <input type="text" id="symSearch" placeholder="ابحث عن زوج... مثال: EUR, Gold, BTC"
+                oninput="filterSymbols()" autocomplete="off" />
+            </div>
+            <button class="sym-select-all" onclick="selectAllVisible()">✓ الكل</button>
+            <button class="sym-select-all" onclick="deselectAll()" style="margin-left:0;">✗ مسح</button>
+          </div>
+          <div class="sym-filter-tabs" id="symCatTabs">
+            <!-- injected by JS -->
+          </div>
+        </div>
+
+        <!-- قائمة الأزواج -->
+        <div class="sym-list" id="symList">
+          <div class="sym-preconnect">
+            🔌 اتصل بالبروكر أولاً<br>
+            <span style="font-size:10px;opacity:0.6;">ستظهر هنا قائمة الأزواج المتاحة في حسابك</span>
+          </div>
+        </div>
+
+        <div class="sym-browser-footer" id="symFooter" style="display:none;">
+          <span id="symFooterCount">0 مختار</span>
+          <span id="symTotalCount" style="opacity:0.5;"></span>
         </div>
       </div>
 
@@ -944,16 +1126,12 @@ function showConnStatus(type, lines) {
 loadSettings();
 
 // ── DATA ──
-const SYMBOLS = [
-  { id: 'EURUSD', name: 'EUR/USD', desc: 'يورو / دولار',     price: 1.0842,   metaSymbol: 'EURUSD' },
-  { id: 'XAUUSD', name: 'XAU/USD', desc: 'ذهب / دولار',     price: 2348.50,  metaSymbol: 'XAUUSD' },
-  { id: 'GBPUSD', name: 'GBP/USD', desc: 'جنيه / دولار',    price: 1.2731,   metaSymbol: 'GBPUSD' },
-  { id: 'BTCUSD', name: 'BTC/USD', desc: 'بيتكوين / دولار', price: 67450,    metaSymbol: 'BTCUSD' },
-  { id: 'USDJPY', name: 'USD/JPY', desc: 'دولار / ين',       price: 157.23,   metaSymbol: 'USDJPY' },
-  { id: 'NASDAQ', name: 'NAS100',  desc: 'ناسداك',           price: 19820.5,  metaSymbol: 'NAS100' },
-];
-
-let selectedSymbols = new Set(['EURUSD', 'XAUUSD']);
+// allBrokerSymbols: القائمة الكاملة من البروكر بعد الاتصال
+// كل عنصر: { symbol: 'EURUSDm', category: 'Forex', ... }
+let allBrokerSymbols = [];
+let filteredSymbols  = [];
+let activeCategory   = 'ALL';
+let selectedSymbols  = new Set(); // مجموعة أسماء الأزواج الفعلية من البروكر
 let connected = false;
 let botRunning = false;
 let botInterval = null;
@@ -961,36 +1139,157 @@ let stats = { total: 0, buy: 0, sell: 0 };
 let priceHistory = {};
 SYMBOLS.forEach(s => { priceHistory[s.id] = [s.price]; });
 
-// ── RENDER SYMBOLS ──
-function renderSymbols() {
-  const grid = document.getElementById('symbolsGrid');
-  grid.innerHTML = SYMBOLS.map(s => `
-    <label class="symbol-item ${selectedSymbols.has(s.id) ? 'active' : ''}" onclick="toggleSymbol('${s.id}')">
-      <div class="sym-check">${selectedSymbols.has(s.id) ? '✓' : ''}</div>
-      <div class="sym-info">
-        <div class="sym-name">${s.name}</div>
-        <div class="sym-desc">${s.desc}</div>
-      </div>
-      <div class="sym-price" id="price-${s.id}">${formatPrice(s.id, s.price)}</div>
-    </label>
-  `).join('');
+// ── BROKER SYMBOL BROWSER ──
+
+// تصنيف الأزواج حسب الاسم
+function categorizeSymbol(sym) {
+  const s = sym.toUpperCase();
+  const forex = ['EUR','GBP','AUD','NZD','CAD','CHF','JPY','USD','MXN','NOK','SEK','DKK','SGD','HKD','ZAR','TRY','PLN','HUF'];
+  const metals = ['XAU','XAG','XPT','XPD','GOLD','SILVER','PLATINUM'];
+  const crypto = ['BTC','ETH','LTC','XRP','ADA','DOT','BNB','SOL','DOGE','MATIC','LINK'];
+  const indices = ['NAS','NDX','SPX','SP5','DOW','DAX','FTSE','CAC','NIK','ASX','US30','US100','US500','GER','UK','JP','AUS','FRA'];
+  const energy  = ['OIL','WTI','BRENT','GAS','NGAS','CRUDE','USOIL','UKOIL'];
+
+  if (metals.some(m  => s.startsWith(m) || s.includes(m))) return 'Metals';
+  if (crypto.some(c  => s.startsWith(c) || s.includes(c))) return 'Crypto';
+  if (energy.some(e  => s.startsWith(e) || s.includes(e))) return 'Energy';
+  if (indices.some(i => s.startsWith(i) || s.includes(i))) return 'Indices';
+  if (forex.some(f   => s.startsWith(f)))                   return 'Forex';
+  return 'Other';
+}
+
+const CAT_COLORS = {
+  'ALL':     { bg: 'var(--blue-dim)',  border: 'var(--blue)',  text: 'var(--blue)'  },
+  'Forex':   { bg: 'var(--green-dim)', border: 'var(--green)', text: 'var(--green)' },
+  'Metals':  { bg: 'var(--gold-dim)',  border: 'var(--gold)',  text: 'var(--gold)'  },
+  'Crypto':  { bg: '#9333ea20',        border: '#9333ea',      text: '#a855f7'      },
+  'Indices': { bg: 'var(--blue-dim)',  border: 'var(--blue)',  text: 'var(--blue)'  },
+  'Energy':  { bg: '#f9731620',        border: '#f97316',      text: '#fb923c'      },
+  'Other':   { bg: 'var(--surface2)', border: 'var(--border)', text: 'var(--text-muted)' },
+};
+
+function loadBrokerSymbolsUI(rawSymbols) {
+  // rawSymbols: array of strings or objects from MetaApi
+  allBrokerSymbols = rawSymbols.map(s => {
+    const name = (typeof s === 'string') ? s : (s.symbol || s.name || '');
+    return { symbol: name, category: categorizeSymbol(name) };
+  }).filter(s => s.symbol.length > 0)
+    .sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+  // استرجاع التحديد المحفوظ
+  const saved = JSON.parse(localStorage.getItem('algotrade_selected') || '[]');
+  selectedSymbols = new Set(saved.filter(s => allBrokerSymbols.some(b => b.symbol === s)));
+
+  // بناء تابات الفئات
+  buildCategoryTabs();
+
+  // إظهار controls
+  document.getElementById('symBrowserControls').style.display = 'block';
+  document.getElementById('symFooter').style.display = 'flex';
+  document.getElementById('symCountBadge').textContent =
+    `${allBrokerSymbols.length} زوج متاح`;
+
+  activeCategory = 'ALL';
+  filterSymbols();
+}
+
+function buildCategoryTabs() {
+  const counts = {};
+  allBrokerSymbols.forEach(s => {
+    counts[s.category] = (counts[s.category] || 0) + 1;
+  });
+
+  const order = ['ALL', 'Forex', 'Metals', 'Crypto', 'Indices', 'Energy', 'Other'];
+  const tabs = document.getElementById('symCatTabs');
+  tabs.innerHTML = order
+    .filter(c => c === 'ALL' || counts[c])
+    .map(c => {
+      const cnt = c === 'ALL' ? allBrokerSymbols.length : (counts[c] || 0);
+      const col = CAT_COLORS[c];
+      return `<button class="sym-tab ${c === activeCategory ? 'active' : ''}"
+        onclick="setCatFilter('${c}')"
+        style="${c === activeCategory ? `border-color:${col.border};color:${col.text};background:${col.bg}` : ''}">
+        ${c} <span style="opacity:0.6">${cnt}</span>
+      </button>`;
+    }).join('');
+}
+
+function setCatFilter(cat) {
+  activeCategory = cat;
+  buildCategoryTabs();
+  filterSymbols();
+}
+
+function filterSymbols() {
+  const q = (document.getElementById('symSearch')?.value || '').trim().toUpperCase();
+  filteredSymbols = allBrokerSymbols.filter(s => {
+    const matchCat = activeCategory === 'ALL' || s.category === activeCategory;
+    const matchQ   = !q || s.symbol.toUpperCase().includes(q);
+    return matchCat && matchQ;
+  });
+  renderSymbolList();
+}
+
+function renderSymbolList() {
+  const list = document.getElementById('symList');
+  if (!allBrokerSymbols.length) return;
+
+  if (!filteredSymbols.length) {
+    list.innerHTML = '<div class="sym-empty">🔍 لا توجد نتائج</div>';
+    return;
+  }
+
+  list.innerHTML = filteredSymbols.map(s => {
+    const on = selectedSymbols.has(s.symbol);
+    const col = CAT_COLORS[s.category] || CAT_COLORS['Other'];
+    return `<div class="sym-row ${on ? 'active' : ''}" onclick="toggleSymbol('${s.symbol}')">
+      <div class="sym-row-check">${on ? '✓' : ''}</div>
+      <div class="sym-row-name">${s.symbol}</div>
+      <div class="sym-row-cat" style="${on ? `border:1px solid ${col.border};color:${col.text};background:${col.bg}` : ''}">${s.category}</div>
+    </div>`;
+  }).join('');
+
+  updateSymbolFooter();
+}
+
+function toggleSymbol(sym) {
+  if (selectedSymbols.has(sym)) selectedSymbols.delete(sym);
+  else selectedSymbols.add(sym);
+  // حفظ التحديد
+  localStorage.setItem('algotrade_selected', JSON.stringify([...selectedSymbols]));
+  renderSymbolList();
   document.getElementById('statPairs').textContent = selectedSymbols.size;
 }
 
-function toggleSymbol(id) {
-  if (selectedSymbols.has(id)) { selectedSymbols.delete(id); }
-  else { selectedSymbols.add(id); }
-  renderSymbols();
+function selectAllVisible() {
+  filteredSymbols.forEach(s => selectedSymbols.add(s.symbol));
+  localStorage.setItem('algotrade_selected', JSON.stringify([...selectedSymbols]));
+  renderSymbolList();
   document.getElementById('statPairs').textContent = selectedSymbols.size;
+}
+
+function deselectAll() {
+  filteredSymbols.forEach(s => selectedSymbols.delete(s.symbol));
+  localStorage.setItem('algotrade_selected', JSON.stringify([...selectedSymbols]));
+  renderSymbolList();
+  document.getElementById('statPairs').textContent = selectedSymbols.size;
+}
+
+function updateSymbolFooter() {
+  document.getElementById('symFooterCount').textContent = `${selectedSymbols.size} مختار للتداول`;
+  document.getElementById('symTotalCount').textContent  = `من ${allBrokerSymbols.length} زوج`;
 }
 
 // ── RENDER MINI CHARTS ──
 function renderMiniCharts() {
   const container = document.getElementById('miniCharts');
-  const active = SYMBOLS.filter(s => selectedSymbols.has(s.id)).slice(0, 4);
+  // بناء الأزواج المختارة من البروكر
+  const active = [...selectedSymbols].slice(0, 4).map(sym => ({
+    id: sym, name: sym, metaSymbol: sym
+  }));
   container.style.gridTemplateColumns = `repeat(${Math.min(active.length, 4)}, 1fr)`;
   container.innerHTML = active.map(s => {
-    const history = priceHistory[s.id] || [s.price];
+    const history = priceHistory[s.id] || [1];
     const path = buildSparklinePath(history);
     const last = history[history.length - 1];
     const first = history[0];
@@ -1076,55 +1375,41 @@ async function metaFetch(base, path, method = 'GET', body = null) {
 }
 
 // ── جلب أسماء الأزواج الحقيقية من البروكر ──
-let brokerSymbolMap = {}; // { 'EURUSD': 'EURUSDm', 'XAUUSD': 'XAUUSDm', ... }
+// brokerSymbolMap لم نعد نحتاجه — selectedSymbols تحتوي مباشرة على أسماء البروكر
 
 async function fetchBrokerSymbols() {
   try {
-    addLog('sys', '📋 جاري جلب أسماء الأزواج من البروكر...');
+    const list = document.getElementById('symList');
+    list.innerHTML = '<div class="sym-loading">⏳ جاري جلب قائمة الأزواج من البروكر...</div>';
+
+    addLog('sys', '📋 جاري جلب قائمة الأزواج الكاملة...');
+
     const symbols = await metaFetch(
       metaClientBase,
       `/users/current/accounts/${metaAccount}/symbols`
     );
 
-    if (!Array.isArray(symbols)) return;
+    if (!Array.isArray(symbols) || symbols.length === 0) {
+      list.innerHTML = '<div class="sym-empty">⚠️ لم يتم جلب الأزواج. تحقق من الحساب.</div>';
+      addLog('warn', '⚠️ الرد لم يكن قائمة أزواج صحيحة');
+      return;
+    }
 
-    addLog('sys', `📋 وجدنا ${symbols.length} زوج في حسابك`);
+    addLog('buy', `✅ تم جلب ${symbols.length} زوج من البروكر`);
+    loadBrokerSymbolsUI(symbols);
 
-    // للكل زوج في التطبيق، ابحث عن المطابق في البروكر
-    const targets = [
-      { id: 'EURUSD',  patterns: ['EURUSD', 'EURUSDm', 'EURUSD.', 'EURUSD_i', 'EUR/USD'] },
-      { id: 'XAUUSD',  patterns: ['XAUUSD', 'XAUUSDm', 'XAUUSD.', 'GOLD', 'XAU/USD'] },
-      { id: 'GBPUSD',  patterns: ['GBPUSD', 'GBPUSDm', 'GBPUSD.', 'GBP/USD'] },
-      { id: 'BTCUSD',  patterns: ['BTCUSD', 'BTCUSDm', 'BTCUSD.', 'BTC/USD', 'Bitcoin'] },
-      { id: 'USDJPY',  patterns: ['USDJPY', 'USDJPYm', 'USDJPY.', 'USD/JPY'] },
-      { id: 'NASDAQ',  patterns: ['NAS100', 'NAS100m', 'NASDAQ', 'US100', 'NDX', 'NAS100.', 'Nasdaq'] },
-    ];
-
-    targets.forEach(target => {
-      for (const pattern of target.patterns) {
-        const found = symbols.find(s => {
-          const name = (s.symbol || s.name || s || '').toUpperCase();
-          return name === pattern.toUpperCase() || name.startsWith(pattern.toUpperCase());
-        });
-        if (found) {
-          const realName = found.symbol || found.name || found;
-          brokerSymbolMap[target.id] = realName;
-          addLog('buy', `✅ ${target.id} → ${realName}`);
-          break;
-        }
-      }
-      if (!brokerSymbolMap[target.id]) {
-        addLog('warn', `⚠️ لم يُوجد ${target.id} في حسابك — سيتم تخطيه`);
-      }
-    });
+    addLog('sys', `💡 اختر الأزواج التي تريد التداول عليها من القائمة`);
 
   } catch(e) {
+    const list = document.getElementById('symList');
+    list.innerHTML = `<div class="sym-empty">❌ خطأ: ${e.message}</div>`;
     addLog('warn', `⚠️ خطأ في جلب الأزواج: ${e.message}`);
   }
 }
 
 function getBrokerSymbol(id) {
-  return brokerSymbolMap[id] || id;
+  // الآن selectedSymbols تحتوي مباشرة على أسماء البروكر
+  return id;
 }
 
 async function fetchCandles(symbol, timeframe = '1m', count = 50) {
@@ -1299,7 +1584,8 @@ async function runCycle() {
   const timeframe = document.getElementById('timeframe').value;
   const rows = [];
 
-  for (const id of selectedSymbols) {
+  for (const sym of selectedSymbols) {
+    const id = sym; // الاسم الحقيقي من البروكر مباشرة
     const sym = SYMBOLS.find(s => s.id === id);
     if (!sym) continue;
 
@@ -1454,7 +1740,7 @@ setInterval(updateClock, 1000);
 updateClock();
 
 // ── INIT ──
-renderSymbols();
+// الأزواج ستظهر بعد الاتصال بالبروكر
 renderMiniCharts();
 
 // ── PWA SERVICE WORKER ──
@@ -1468,3 +1754,4 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
+
