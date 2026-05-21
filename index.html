@@ -518,6 +518,103 @@
     border-top: 1px solid var(--border);
     margin: 16px 0;
   }
+
+  /* ── SETTINGS CARD ── */
+  .settings-section {
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-section:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+  .settings-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .step-num {
+    width: 24px; height: 24px;
+    background: var(--green-dim);
+    border: 1px solid var(--green);
+    color: var(--green);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; font-family: var(--mono);
+    flex-shrink: 0;
+  }
+  .step-label {
+    font-size: 12px; font-weight: 600; color: var(--text-soft);
+    font-family: var(--mono); flex: 1;
+  }
+  .step-link {
+    font-size: 10px; color: var(--blue); text-decoration: none;
+    border: 1px solid var(--blue-dim); padding: 3px 8px;
+    border-radius: 6px; font-family: var(--mono);
+    transition: background 0.2s;
+  }
+  .step-link:hover { background: var(--blue-dim); }
+
+  .input-wrap {
+    position: relative; display: flex; align-items: center;
+  }
+  .input-wrap input { flex: 1; padding-left: 36px !important; }
+  .eye-btn {
+    position: absolute; left: 8px;
+    background: none; border: none; cursor: pointer;
+    font-size: 14px; color: var(--text-muted);
+    padding: 0; line-height: 1;
+  }
+
+  .field-hint {
+    color: var(--text-muted); font-size: 10px;
+    font-family: var(--mono); font-weight: 400; margin-right: 6px;
+  }
+
+  .account-type-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .type-option {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .type-option.active {
+    border-color: var(--green);
+    background: var(--green-dim);
+  }
+  .type-icon { font-size: 20px; }
+  .type-name { font-size: 13px; font-weight: 700; color: var(--text); }
+  .type-desc { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+  .type-check { color: var(--green); font-weight: 700; margin-right: auto; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .settings-actions {
+    display: flex; gap: 10px; align-items: center;
+  }
+  .btn-save {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-soft);
+    padding: 12px 16px;
+    border-radius: 10px; cursor: pointer;
+    font-size: 12px; font-family: var(--mono);
+    transition: all 0.2s; white-space: nowrap;
+  }
+  .btn-save:hover { border-color: var(--blue); color: var(--blue); }
+  .btn-save.unsaved { border-color: var(--gold); color: var(--gold); }
+
+  @media (max-width: 480px) {
+    .two-col { grid-template-columns: 1fr; }
+    .account-type-row { grid-template-columns: 1fr 1fr; }
+    .settings-actions { flex-wrap: wrap; }
+    .btn-save { width: 100%; }
+  }
+
 </style>
 </head>
 <body>
@@ -546,29 +643,107 @@
     <!-- LEFT PANEL -->
     <div style="display:flex;flex-direction:column;gap:16px;">
 
-      <!-- CONNECTION CARD -->
-      <div class="card">
-        <div class="card-title">إعدادات الاتصال</div>
-
-        <div class="field">
-          <label>MetaApi Token</label>
-          <input type="password" id="apiToken" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
-        </div>
-        <div class="field">
-          <label>Account ID</label>
-          <input type="text" id="accountId" placeholder="your-account-id" />
-        </div>
-        <div class="field">
-          <label>نوع الحساب</label>
-          <select id="accountType">
-            <option value="demo">🧪 Demo Account</option>
-            <option value="real">💰 Real Account</option>
-          </select>
+      <!-- CONNECTION CARD - ENHANCED -->
+      <div class="card" id="settingsCard">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+          <div class="card-title" style="margin:0">⚙️ إعدادات الاتصال</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="savedBadge" style="display:none;font-size:10px;font-family:var(--mono);color:var(--green);background:var(--green-dim);padding:3px 8px;border-radius:20px;">✓ محفوظ</span>
+            <button onclick="toggleSettings()" id="settingsToggleBtn" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:5px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-family:var(--mono);">▲ طي</button>
+          </div>
         </div>
 
-        <div class="bot-row">
-          <button class="btn btn-connect" onclick="handleConnect()">🔌 اتصال</button>
-          <button class="btn btn-stop" onclick="handleDisconnect()" style="width:auto;padding:12px 16px;">✕</button>
+        <div id="settingsBody">
+
+          <!-- STEP 1 -->
+          <div class="settings-section">
+            <div class="settings-step">
+              <div class="step-num">1</div>
+              <div class="step-label">بيانات MetaApi</div>
+              <a href="https://app.metaapi.cloud" target="_blank" class="step-link">🔗 Dashboard</a>
+            </div>
+            <div class="field">
+              <label>API Token <span class="field-hint">Settings → API Access</span></label>
+              <div class="input-wrap">
+                <button class="eye-btn" onclick="toggleVisibility('apiToken', this)">👁</button>
+                <input type="password" id="apiToken" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" oninput="markUnsaved()" autocomplete="off"/>
+              </div>
+            </div>
+            <div class="field">
+              <label>Account ID <span class="field-hint">Accounts → انسخ الـ ID</span></label>
+              <div class="input-wrap">
+                <button class="eye-btn" onclick="copyField('accountId')">📋</button>
+                <input type="text" id="accountId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" oninput="markUnsaved()" autocomplete="off"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 2 -->
+          <div class="settings-section">
+            <div class="settings-step">
+              <div class="step-num">2</div>
+              <div class="step-label">نوع الحساب</div>
+            </div>
+            <div class="account-type-row">
+              <div class="type-option active" id="opt-demo" onclick="selectAccountType('demo')">
+                <div class="type-icon">🧪</div>
+                <div class="type-text">
+                  <div class="type-name">Demo</div>
+                  <div class="type-desc">تجريبي آمن</div>
+                </div>
+                <div class="type-check" id="check-demo">✓</div>
+              </div>
+              <div class="type-option" id="opt-real" onclick="selectAccountType('real')">
+                <div class="type-icon">💰</div>
+                <div class="type-text">
+                  <div class="type-name">Real</div>
+                  <div class="type-desc">حساب حقيقي</div>
+                </div>
+                <div class="type-check" id="check-real" style="display:none">✓</div>
+              </div>
+            </div>
+            <div id="realWarning" style="display:none;background:#ff3d5a15;border:1px solid #ff3d5a40;border-radius:10px;padding:10px 14px;font-size:11px;color:#ff3d5a;margin-top:10px;line-height:1.6;">
+              ⚠️ <strong>تحذير:</strong> الحساب الحقيقي سيُنفّذ صفقات بأموال فعلية. تأكد من إعدادات المخاطرة قبل التشغيل.
+            </div>
+          </div>
+
+          <!-- STEP 3 -->
+          <div class="settings-section">
+            <div class="settings-step">
+              <div class="step-num">3</div>
+              <div class="step-label">إعدادات السيرفر</div>
+            </div>
+            <div class="two-col">
+              <div class="field" style="margin:0">
+                <label>Broker Server <span class="field-hint">اختياري</span></label>
+                <input type="text" id="brokerServer" placeholder="ICMarkets-Live" oninput="markUnsaved()"/>
+              </div>
+              <div class="field" style="margin:0">
+                <label>Region</label>
+                <select id="serverRegion" onchange="markUnsaved()">
+                  <option value="vint-hill">🇺🇸 US (Vint Hill)</option>
+                  <option value="new-york">🇺🇸 US (New York)</option>
+                  <option value="london">🇬🇧 London</option>
+                  <option value="singapore">🇸🇬 Singapore</option>
+                  <option value="sydney">🇦🇺 Sydney</option>
+                  <option value="frankfurt">🇩🇪 Frankfurt</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <!-- ACTIONS -->
+          <div class="settings-actions">
+            <button class="btn btn-save" id="saveBtn" onclick="saveSettings()">💾 حفظ</button>
+            <button class="btn btn-connect" onclick="handleConnect()" style="flex:1">🔌 اتصال</button>
+            <button class="btn btn-stop" onclick="handleDisconnect()" style="width:auto;padding:12px 16px;">✕</button>
+          </div>
+
+          <!-- STATUS -->
+          <div id="connStatus" style="display:none;margin-top:12px;border-radius:10px;padding:12px 14px;font-size:12px;font-family:var(--mono);line-height:1.8;"></div>
+
         </div>
       </div>
 
@@ -680,6 +855,94 @@
 </div>
 
 <script>
+
+// ── SETTINGS ──
+let accountType = 'demo';
+let settingsOpen = true;
+let hasUnsaved = false;
+
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem('algotrade_settings') || '{}');
+    if (s.token) document.getElementById('apiToken').value = s.token;
+    if (s.account) document.getElementById('accountId').value = s.account;
+    if (s.broker) document.getElementById('brokerServer').value = s.broker;
+    if (s.region) document.getElementById('serverRegion').value = s.region;
+    if (s.type) selectAccountType(s.type, true);
+    if (s.token || s.account) showSavedBadge();
+  } catch(e) {}
+}
+
+function saveSettings() {
+  const s = {
+    token: document.getElementById('apiToken').value,
+    account: document.getElementById('accountId').value,
+    broker: document.getElementById('brokerServer').value,
+    region: document.getElementById('serverRegion').value,
+    type: accountType
+  };
+  localStorage.setItem('algotrade_settings', JSON.stringify(s));
+  hasUnsaved = false;
+  document.getElementById('saveBtn').className = 'btn btn-save';
+  showSavedBadge();
+  addLog('sys', '💾 تم حفظ الإعدادات محلياً');
+}
+
+function showSavedBadge() {
+  const b = document.getElementById('savedBadge');
+  b.style.display = 'inline';
+  setTimeout(() => b.style.display = 'none', 3000);
+}
+
+function markUnsaved() {
+  if (!hasUnsaved) {
+    hasUnsaved = true;
+    document.getElementById('saveBtn').className = 'btn btn-save unsaved';
+  }
+}
+
+function toggleSettings() {
+  settingsOpen = !settingsOpen;
+  document.getElementById('settingsBody').style.display = settingsOpen ? 'block' : 'none';
+  document.getElementById('settingsToggleBtn').textContent = settingsOpen ? '▲ طي' : '▼ توسيع';
+}
+
+function selectAccountType(type, silent) {
+  accountType = type;
+  document.getElementById('opt-demo').className = 'type-option' + (type === 'demo' ? ' active' : '');
+  document.getElementById('opt-real').className = 'type-option' + (type === 'real' ? ' active' : '');
+  document.getElementById('check-demo').style.display = type === 'demo' ? 'block' : 'none';
+  document.getElementById('check-real').style.display = type === 'real' ? 'block' : 'none';
+  document.getElementById('realWarning').style.display = type === 'real' ? 'block' : 'none';
+  if (!silent) markUnsaved();
+}
+
+function toggleVisibility(id, btn) {
+  const inp = document.getElementById(id);
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+
+function copyField(id) {
+  const val = document.getElementById(id).value;
+  if (!val) return;
+  navigator.clipboard.writeText(val).then(() => addLog('sys', '📋 تم النسخ'));
+}
+
+function showConnStatus(type, lines) {
+  const el = document.getElementById('connStatus');
+  const colors = { success: 'var(--green)', error: 'var(--red)', info: 'var(--blue)' };
+  const bgs = { success: '#00ff8810', error: '#ff3d5a10', info: '#4d9fff10' };
+  el.style.display = 'block';
+  el.style.border = `1px solid ${colors[type]}40`;
+  el.style.background = bgs[type];
+  el.style.color = colors[type];
+  el.innerHTML = lines.join('<br>');
+}
+
+// Load on start
+loadSettings();
+
 // ── DATA ──
 const SYMBOLS = [
   { id: 'EURUSD', name: 'EUR/USD', desc: 'يورو / دولار', price: 1.0842 },
@@ -771,16 +1034,31 @@ function buildSparklinePath(data) {
 function handleConnect() {
   const token = document.getElementById('apiToken').value;
   const account = document.getElementById('accountId').value;
+  const region = document.getElementById('serverRegion').value;
+  const broker = document.getElementById('brokerServer').value;
   if (!token || !account) {
     addLog('warn', '⚠️ يرجى إدخال الـ API Token و Account ID');
+    showConnStatus('error', ['❌ يرجى إدخال API Token و Account ID']);
     return;
   }
+  saveSettings();
   addLog('info', `🔌 جاري الاتصال بـ MetaApi...`);
+  showConnStatus('info', [
+    `🔌 جاري الاتصال...`,
+    `📍 Region: ${region}`,
+    `🏦 Broker: ${broker || 'Auto-detect'}`,
+    `🔑 Account: ${account.slice(0,8)}...`
+  ]);
   setTimeout(() => {
     connected = true;
     setStatus(true);
     addLog('buy', `✅ تم الاتصال بنجاح! الحساب: ${account.slice(0, 8)}...`);
     addLog('info', `📡 جاري مزامنة بيانات السوق...`);
+    showConnStatus('success', [
+      `✅ متصل بنجاح`,
+      `🏦 ${accountType === 'real' ? '⚠️ حساب حقيقي' : '🧪 حساب تجريبي'}`,
+      `📍 ${region} | ${account.slice(0,8)}...`
+    ]);
     setTimeout(() => addLog('sys', `🟢 النظام جاهز للتداول`), 1200);
   }, 1800);
 }
