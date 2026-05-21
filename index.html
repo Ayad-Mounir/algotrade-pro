@@ -1066,11 +1066,65 @@ async function metaFetch(base, path, method = 'GET', body = null) {
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${base}${path}`, opts);
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch(e) { json = { raw: text }; }
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`${res.status}: ${err}`);
+    throw new Error(`${res.status}: ${text.slice(0,200)}`);
   }
-  return res.json();
+  return json;
+}
+
+// ── جلب أسماء الأزواج الحقيقية من البروكر ──
+let brokerSymbolMap = {}; // { 'EURUSD': 'EURUSDm', 'XAUUSD': 'XAUUSDm', ... }
+
+async function fetchBrokerSymbols() {
+  try {
+    addLog('sys', '📋 جاري جلب أسماء الأزواج من البروكر...');
+    const symbols = await metaFetch(
+      metaClientBase,
+      `/users/current/accounts/${metaAccount}/symbols`
+    );
+
+    if (!Array.isArray(symbols)) return;
+
+    addLog('sys', `📋 وجدنا ${symbols.length} زوج في حسابك`);
+
+    // للكل زوج في التطبيق، ابحث عن المطابق في البروكر
+    const targets = [
+      { id: 'EURUSD',  patterns: ['EURUSD', 'EURUSDm', 'EURUSD.', 'EURUSD_i', 'EUR/USD'] },
+      { id: 'XAUUSD',  patterns: ['XAUUSD', 'XAUUSDm', 'XAUUSD.', 'GOLD', 'XAU/USD'] },
+      { id: 'GBPUSD',  patterns: ['GBPUSD', 'GBPUSDm', 'GBPUSD.', 'GBP/USD'] },
+      { id: 'BTCUSD',  patterns: ['BTCUSD', 'BTCUSDm', 'BTCUSD.', 'BTC/USD', 'Bitcoin'] },
+      { id: 'USDJPY',  patterns: ['USDJPY', 'USDJPYm', 'USDJPY.', 'USD/JPY'] },
+      { id: 'NASDAQ',  patterns: ['NAS100', 'NAS100m', 'NASDAQ', 'US100', 'NDX', 'NAS100.', 'Nasdaq'] },
+    ];
+
+    targets.forEach(target => {
+      for (const pattern of target.patterns) {
+        const found = symbols.find(s => {
+          const name = (s.symbol || s.name || s || '').toUpperCase();
+          return name === pattern.toUpperCase() || name.startsWith(pattern.toUpperCase());
+        });
+        if (found) {
+          const realName = found.symbol || found.name || found;
+          brokerSymbolMap[target.id] = realName;
+          addLog('buy', `✅ ${target.id} → ${realName}`);
+          break;
+        }
+      }
+      if (!brokerSymbolMap[target.id]) {
+        addLog('warn', `⚠️ لم يُوجد ${target.id} في حسابك — سيتم تخطيه`);
+      }
+    });
+
+  } catch(e) {
+    addLog('warn', `⚠️ خطأ في جلب الأزواج: ${e.message}`);
+  }
+}
+
+function getBrokerSymbol(id) {
+  return brokerSymbolMap[id] || id;
 }
 
 async function fetchCandles(symbol, timeframe = '1m', count = 50) {
@@ -1104,17 +1158,20 @@ async function placeOrder(symbol, type, lot) {
     const order = {
       symbol,
       actionType: type === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-      volume: lot,
+      volume: parseFloat(lot),
       comment: 'AlgoTrade Pro MA'
     };
+    addLog('sys', `📤 إرسال أمر ${type} ${symbol} حجم ${lot}...`);
     const res = await metaFetch(
       metaClientBase,
       `/users/current/accounts/${metaAccount}/trade`,
       'POST', order
     );
+    // Log full response for debugging
+    addLog('sys', `📥 رد MetaApi: ${JSON.stringify(res).slice(0,120)}`);
     return res;
   } catch(e) {
-    addLog('warn', `⚠️ فشل تنفيذ الصفقة: ${e.message}`);
+    addLog('warn', `❌ فشل الصفقة ${type} ${symbol}: ${e.message}`);
     return null;
   }
 }
@@ -1182,6 +1239,9 @@ async function handleConnect() {
 
     addLog('sys', '🟢 النظام جاهز للتداول الحقيقي');
 
+    // جلب أسماء الأزواج الحقيقية من البروكر
+    await fetchBrokerSymbols();
+
   } catch(e) {
     connected = false;
     setStatus(false);
@@ -1244,8 +1304,14 @@ async function runCycle() {
     if (!sym) continue;
 
     try {
+      // تخطي الأزواج غير الموجودة في البروكر
+      const brokerSym = getBrokerSymbol(id);
+      if (!brokerSymbolMap[id]) {
+        addLog('warn', `⏭️ تخطي ${id} — غير موجود في حسابك`);
+        continue;
+      }
       // 1. جلب السعر الحالي الحقيقي
-      const priceData = await fetchPrice(sym.metaSymbol || id);
+      const priceData = await fetchPrice(brokerSym);
       let currentPrice;
 
       if (priceData && priceData.bid) {
@@ -1259,7 +1325,7 @@ async function runCycle() {
       }
 
       // 2. جلب الشمعات الحقيقية لحساب MA
-      const candles = await fetchCandles(sym.metaSymbol || id, timeframe, period + 5);
+      const candles = await fetchCandles(brokerSym, timeframe, period + 5);
       let ma;
 
       if (candles.length >= period) {
@@ -1290,11 +1356,11 @@ async function runCycle() {
         stats.buy++; stats.total++;
 
         // 4. تنفيذ الصفقة الحقيقية
-        const order = await placeOrder(sym.metaSymbol || id, 'BUY', lot);
-        if (order && order.orderId) {
-          addLog('buy', `✅ BUY ${sym.name} @ ${formatPrice(id, currentPrice)} | OrderID: ${order.orderId}`);
-        } else {
-          addLog('buy', `BUY ${sym.name} @ ${formatPrice(id, currentPrice)} | MA: ${formatPrice(id, ma)} | Lot: ${lot}`);
+        const order = await placeOrder(brokerSym, 'BUY', lot);
+        if (order && (order.orderId || order.positionId || order.numericCode === 0 || order.tradeExecuted)) {
+          addLog('buy', `✅ BUY ${sym.name} @ ${formatPrice(id, currentPrice)} | ID: ${order.orderId || order.positionId || 'OK'}`);
+        } else if (order) {
+          addLog('warn', `⚠️ BUY ${sym.name} - رد غير متوقع: ${JSON.stringify(order).slice(0,80)}`);
         }
 
       } else if (diff < -threshold) {
@@ -1303,11 +1369,11 @@ async function runCycle() {
         logType = 'sell';
         stats.sell++; stats.total++;
 
-        const order = await placeOrder(sym.metaSymbol || id, 'SELL', lot);
-        if (order && order.orderId) {
-          addLog('sell', `✅ SELL ${sym.name} @ ${formatPrice(id, currentPrice)} | OrderID: ${order.orderId}`);
-        } else {
-          addLog('sell', `SELL ${sym.name} @ ${formatPrice(id, currentPrice)} | MA: ${formatPrice(id, ma)} | Lot: ${lot}`);
+        const order = await placeOrder(brokerSym, 'SELL', lot);
+        if (order && (order.orderId || order.positionId || order.numericCode === 0 || order.tradeExecuted)) {
+          addLog('sell', `✅ SELL ${sym.name} @ ${formatPrice(id, currentPrice)} | ID: ${order.orderId || order.positionId || 'OK'}`);
+        } else if (order) {
+          addLog('warn', `⚠️ SELL ${sym.name} - رد غير متوقع: ${JSON.stringify(order).slice(0,80)}`);
         }
 
       } else {
