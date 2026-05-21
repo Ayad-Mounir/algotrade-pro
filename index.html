@@ -872,15 +872,16 @@
                 <input type="text" id="brokerServer" placeholder="ICMarkets-Live" oninput="markUnsaved()"/>
               </div>
               <div class="field" style="margin:0">
-                <label>Region</label>
-                <select id="serverRegion" onchange="markUnsaved()">
-                  <option value="vint-hill">🇺🇸 US (Vint Hill)</option>
-                  <option value="new-york">🇺🇸 US (New York)</option>
-                  <option value="london">🇬🇧 London</option>
-                  <option value="singapore">🇸🇬 Singapore</option>
-                  <option value="sydney">🇦🇺 Sydney</option>
-                  <option value="frankfurt">🇩🇪 Frankfurt</option>
-                </select>
+                <label>Region <span style="font-size:9px;color:var(--blue)">(تلقائي)</span></label>
+                <div id="regionDisplay" style="
+                  padding:10px 14px;
+                  background:var(--surface2);
+                  border:1px solid var(--border);
+                  border-radius:10px;
+                  font-family:var(--mono);
+                  font-size:12px;
+                  color:var(--text-muted);
+                ">⚡ يُكتشف عند الاتصال</div>
               </div>
             </div>
           </div>
@@ -1049,7 +1050,7 @@ function loadSettings() {
     if (s.token) document.getElementById('apiToken').value = s.token;
     if (s.account) document.getElementById('accountId').value = s.account;
     if (s.broker) document.getElementById('brokerServer').value = s.broker;
-    if (s.region) document.getElementById('serverRegion').value = s.region;
+    // region يُكتشف تلقائياً — لا نحتاج تحميله
     if (s.type) selectAccountType(s.type, true);
     if (s.token || s.account) showSavedBadge();
   } catch(e) {}
@@ -1060,7 +1061,7 @@ function saveSettings() {
     token: document.getElementById('apiToken').value,
     account: document.getElementById('accountId').value,
     broker: document.getElementById('brokerServer').value,
-    region: document.getElementById('serverRegion').value,
+    region: '', // يُكتشف تلقائياً
     type: accountType
   };
   localStorage.setItem('algotrade_settings', JSON.stringify(s));
@@ -1330,18 +1331,9 @@ function buildSparklinePath(data) {
 }
 
 // ── CONNECT ──
-// ── MetaApi REAL ENGINE ──
-// Base URLs per region (Provisioning API + Client API)
-const META_REGIONS = {
-  'vint-hill':  'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
-  'new-york':   'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
-  'london':     'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
-  'singapore':  'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
-  'sydney':     'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
-  'frankfurt':  'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai',
-};
+// ── MetaApi ENGINE v2 — Smart Connect ──
 
-const META_CLIENT_REGIONS = {
+const ALL_CLIENT_REGIONS = {
   'vint-hill':  'https://mt-client-api-v1.vint-hill.agiliumtrade.ai',
   'new-york':   'https://mt-client-api-v1.new-york.agiliumtrade.ai',
   'london':     'https://mt-client-api-v1.london.agiliumtrade.ai',
@@ -1350,11 +1342,13 @@ const META_CLIENT_REGIONS = {
   'frankfurt':  'https://mt-client-api-v1.frankfurt.agiliumtrade.ai',
 };
 
-let metaToken = '';
-let metaAccount = '';
-let metaProvBase = '';
+const PROV_BASE = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai';
+
+let metaToken      = '';
+let metaAccount    = '';
 let metaClientBase = '';
 
+// ── طلب HTTP موحد ──
 async function metaFetch(base, path, method = 'GET', body = null) {
   const opts = {
     method,
@@ -1368,20 +1362,83 @@ async function metaFetch(base, path, method = 'GET', body = null) {
   const text = await res.text();
   let json;
   try { json = JSON.parse(text); } catch(e) { json = { raw: text }; }
-  if (!res.ok) {
-    throw new Error(`${res.status}: ${text.slice(0,200)}`);
-  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
   return json;
 }
 
-// ── جلب أسماء الأزواج الحقيقية من البروكر ──
-// brokerSymbolMap لم نعد نحتاجه — selectedSymbols تحتوي مباشرة على أسماء البروكر
+// ── 1. تحقق من صحة التوكن عبر Provisioning API ──
+async function checkToken() {
+  const data = await metaFetch(PROV_BASE, '/users/current/accounts?limit=1&offset=0');
+  return data;
+}
 
+// ── 2. ابحث عن الحساب في Provisioning API ──
+async function getAccountInfo() {
+  try {
+    const data = await metaFetch(PROV_BASE, `/users/current/accounts/${metaAccount}`);
+    return data;
+  } catch(e) {
+    // قد تفشل بسبب CORS أو permissions — غير حاسمة
+    return null;
+  }
+}
+
+// ── 3. اكتشف الـ Region تلقائياً بتجربة كل endpoint ──
+async function autoDetectRegion() {
+  addLog('sys', '🌐 اكتشاف الـ Region تلقائياً...');
+
+  const regions = Object.entries(ALL_CLIENT_REGIONS);
+  const results = await Promise.allSettled(
+    regions.map(async ([name, base]) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      try {
+        const res = await fetch(
+          `${base}/users/current/accounts/${metaAccount}/account-information`,
+          {
+            headers: { 'auth-token': metaToken, 'Content-Type': 'application/json' },
+            signal: controller.signal
+          }
+        );
+        clearTimeout(timeout);
+        const text = await res.text();
+        let json;
+        try { json = JSON.parse(text); } catch(e) { json = {}; }
+        // أي رد من الـ server (حتى 401/404) يعني الـ region صح
+        if (res.status !== 0) return { name, base, status: res.status, data: json };
+        throw new Error('no response');
+      } catch(e) {
+        clearTimeout(timeout);
+        throw e;
+      }
+    })
+  );
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      const { name, base, status, data } = r.value;
+      addLog('info', `📍 Region محدد: ${name} (HTTP ${status})`);
+      return { name, base, status, data };
+    }
+  }
+  throw new Error('لم يتم العثور على Region مناسب — تحقق من الاتصال بالإنترنت');
+}
+
+// ── 4. جلب معلومات الحساب (الرصيد) ──
+async function fetchAccountInfo() {
+  const data = await metaFetch(
+    metaClientBase,
+    `/users/current/accounts/${metaAccount}/account-information`
+  );
+  return data;
+}
+
+// ── fetchBrokerSymbols ──
 async function fetchBrokerSymbols() {
   try {
     const list = document.getElementById('symList');
     list.innerHTML = '<div class="sym-loading">⏳ جاري جلب قائمة الأزواج من البروكر...</div>';
-
     addLog('sys', '📋 جاري جلب قائمة الأزواج الكاملة...');
 
     const symbols = await metaFetch(
@@ -1397,20 +1454,16 @@ async function fetchBrokerSymbols() {
 
     addLog('buy', `✅ تم جلب ${symbols.length} زوج من البروكر`);
     loadBrokerSymbolsUI(symbols);
-
-    addLog('sys', `💡 اختر الأزواج التي تريد التداول عليها من القائمة`);
+    addLog('sys', '💡 اختر الأزواج التي تريد التداول عليها');
 
   } catch(e) {
     const list = document.getElementById('symList');
-    list.innerHTML = `<div class="sym-empty">❌ خطأ: ${e.message}</div>`;
+    list.innerHTML = `<div class="sym-empty">❌ خطأ في جلب الأزواج: ${e.message}</div>`;
     addLog('warn', `⚠️ خطأ في جلب الأزواج: ${e.message}`);
   }
 }
 
-function getBrokerSymbol(id) {
-  // الآن selectedSymbols تحتوي مباشرة على أسماء البروكر
-  return id;
-}
+function getBrokerSymbol(id) { return id; }
 
 async function fetchCandles(symbol, timeframe = '1m', count = 50) {
   try {
@@ -1433,9 +1486,7 @@ async function fetchPrice(symbol) {
       `/users/current/accounts/${metaAccount}/symbols/${symbol}/current-price?keepSubscription=false`
     );
     return data;
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
 async function placeOrder(symbol, type, lot) {
@@ -1447,13 +1498,8 @@ async function placeOrder(symbol, type, lot) {
       comment: 'AlgoTrade Pro MA'
     };
     addLog('sys', `📤 إرسال أمر ${type} ${symbol} حجم ${lot}...`);
-    const res = await metaFetch(
-      metaClientBase,
-      `/users/current/accounts/${metaAccount}/trade`,
-      'POST', order
-    );
-    // Log full response for debugging
-    addLog('sys', `📥 رد MetaApi: ${JSON.stringify(res).slice(0,120)}`);
+    const res = await metaFetch(metaClientBase, `/users/current/accounts/${metaAccount}/trade`, 'POST', order);
+    addLog('sys', `📥 رد MetaApi: ${JSON.stringify(res).slice(0, 120)}`);
     return res;
   } catch(e) {
     addLog('warn', `❌ فشل الصفقة ${type} ${symbol}: ${e.message}`);
@@ -1461,82 +1507,126 @@ async function placeOrder(symbol, type, lot) {
   }
 }
 
+// ── MAIN CONNECT ──
 async function handleConnect() {
-  metaToken  = document.getElementById('apiToken').value.trim();
+  metaToken   = document.getElementById('apiToken').value.trim();
   metaAccount = document.getElementById('accountId').value.trim();
-  const region = document.getElementById('serverRegion').value;
 
   if (!metaToken || !metaAccount) {
-    addLog('warn', '⚠️ يرجى إدخال الـ API Token و Account ID');
     showConnStatus('error', ['❌ يرجى إدخال API Token و Account ID']);
     return;
   }
 
-  // Set correct base URLs
-  metaProvBase   = META_REGIONS[region]        || META_REGIONS['vint-hill'];
-  metaClientBase = META_CLIENT_REGIONS[region] || META_CLIENT_REGIONS['london'];
+  const btn = document.querySelector('[onclick="handleConnect()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري الاتصال...'; }
 
   saveSettings();
-  addLog('info', '🔌 جاري الاتصال بـ MetaApi...');
+  addLog('info', '🔌 بدء عملية الاتصال...');
+
   showConnStatus('info', [
-    '🔌 جاري التحقق من الحساب...',
-    `📍 Region: ${region}`,
+    '⏳ جاري الاتصال...',
     `🔑 Account: ${metaAccount.slice(0,8)}...`
   ]);
 
   try {
-    // Step 1: جلب معلومات الحساب من Provisioning API
-    const info = await metaFetch(
-      metaProvBase,
-      `/users/current/accounts/${metaAccount}`
-    );
 
-    const broker  = info.broker  || info.name   || 'Unknown';
-    const server  = info.server  || info.quoteStreamingIntervalInSeconds || 'N/A';
-    const state   = info.state   || 'DEPLOYED';
-
-    connected = true;
-    setStatus(true);
-
-    addLog('buy',  `✅ تم الاتصال! ${broker}`);
-    addLog('info', `🖥️ Server: ${server} | State: ${state}`);
-    addLog('info', `📍 Region: ${region} | ${metaAccount.slice(0,8)}...`);
-
-    showConnStatus('success', [
-      `✅ متصل بنجاح — ${broker}`,
-      `🖥️ Server: ${server}`,
-      `📍 ${region} | Account: ${metaAccount.slice(0,8)}...`,
-      `${accountType === 'real' ? '⚠️ حساب حقيقي' : '🧪 حساب تجريبي'}`
-    ]);
-
-    // Step 2: جلب معلومات التداول (الرصيد)
+    // ── الخطوة 1: اكتشاف الـ Region ──
+    showConnStatus('info', ['🌐 اكتشاف الـ Region...', '(قد يستغرق 5-10 ثواني)']);
+    let regionResult;
     try {
-      const trading = await metaFetch(
-        metaClientBase,
-        `/users/current/accounts/${metaAccount}/account-information`
-      );
-      if (trading.balance !== undefined) {
-        addLog('info', `💰 الرصيد: $${trading.balance.toFixed(2)} | Equity: $${(trading.equity||0).toFixed(2)}`);
+      regionResult = await autoDetectRegion();
+      metaClientBase = regionResult.base;
+      const rd = document.getElementById('regionDisplay');
+      if (rd) {
+        const flags = {'vint-hill':'🇺🇸','new-york':'🇺🇸','london':'🇬🇧','singapore':'🇸🇬','sydney':'🇦🇺','frankfurt':'🇩🇪'};
+        rd.style.color = 'var(--green)';
+        rd.style.borderColor = 'var(--green)';
+        rd.textContent = `${flags[regionResult.name]||'🌐'} ${regionResult.name}`;
       }
-    } catch(e2) {
-      addLog('warn', `⚠️ لم يتم جلب الرصيد: ${e2.message}`);
+    } catch(regionErr) {
+      throw new Error(`فشل اكتشاف Region: ${regionErr.message}`);
     }
 
-    addLog('sys', '🟢 النظام جاهز للتداول الحقيقي');
+    // ── الخطوة 2: تحليل رد الـ account-information ──
+    const { status, data } = regionResult;
 
-    // جلب أسماء الأزواج الحقيقية من البروكر
+    if (status === 401) {
+      throw new Error('401 — API Token غير صحيح. تحقق منه في app.metaapi.cloud → Token');
+    }
+    if (status === 404) {
+      throw new Error('404 — Account ID غير موجود. تحقق من الـ ID في صفحة Accounts');
+    }
+    if (status === 422 || (data && data.message && data.message.includes('deployed'))) {
+      throw new Error('الحساب غير مفعّل (Undeployed). افتح MetaApi Dashboard واضغط Deploy على حسابك');
+    }
+
+    let balance = null;
+    let broker  = 'Unknown';
+    let currency = '';
+
+    if (status === 200 && data) {
+      balance  = data.balance;
+      currency = data.currency || '';
+      broker   = data.broker || data.name || 'متصل';
+    } else if (status !== 200) {
+      // ربما الحساب يعمل لكن يحتاج استيراد بيانات
+      addLog('warn', `⚠️ account-information رجع HTTP ${status} — ${JSON.stringify(data).slice(0,100)}`);
+    }
+
+    // ── الخطوة 3: محاولة Provisioning لمعلومات إضافية ──
+    const provInfo = await getAccountInfo();
+    if (provInfo) {
+      broker = provInfo.broker || provInfo.name || broker;
+      const state = provInfo.state || provInfo.connectionStatus;
+      if (state && state !== 'DEPLOYED' && state !== 'CONNECTED') {
+        addLog('warn', `⚠️ حالة الحساب: ${state} — قد لا تعمل بعض الوظائف`);
+      }
+    }
+
+    // ── نجح الاتصال ──
+    connected = true;
+    setStatus(true);
+    if (btn) { btn.disabled = false; btn.textContent = '🔌 اتصال'; }
+
+    addLog('buy',  `✅ متصل! ${broker}`);
+    addLog('info', `📍 Region: ${regionResult.name}`);
+    if (balance !== null) {
+      addLog('info', `💰 الرصيد: ${balance.toFixed(2)} ${currency}`);
+    }
+    addLog('sys',  '🟢 النظام جاهز');
+
+    showConnStatus('success', [
+      `✅ متصل — ${broker}`,
+      `📍 Region: ${regionResult.name}`,
+      balance !== null ? `💰 الرصيد: ${balance.toFixed(2)} ${currency}` : '',
+      `${accountType === 'real' ? '⚠️ حساب حقيقي' : '🧪 حساب تجريبي'}`
+    ].filter(Boolean));
+
+    // ── جلب الأزواج ──
     await fetchBrokerSymbols();
 
   } catch(e) {
     connected = false;
     setStatus(false);
-    addLog('warn', `❌ فشل الاتصال: ${e.message}`);
-    showConnStatus('error', [
-      '❌ فشل الاتصال',
-      `السبب: ${e.message}`,
-      '💡 تأكد من الـ Account ID من صفحة Accounts في MetaApi',
-      '💡 تأكد أن الحساب Deployed وليس Undeployed'
-    ]);
+    if (btn) { btn.disabled = false; btn.textContent = '🔌 اتصال'; }
+
+    const msg = e.message || String(e);
+    addLog('warn', `❌ ${msg}`);
+
+    // تحليل نوع الخطأ لرسالة مفيدة
+    let tips = [];
+    if (msg.includes('401') || msg.includes('Token'))
+      tips = ['💡 افتح app.metaapi.cloud → Token', '💡 انسخ الـ API Token بالكامل'];
+    else if (msg.includes('404') || msg.includes('Account ID'))
+      tips = ['💡 افتح app.metaapi.cloud → Accounts', '💡 انسخ الـ ID من عمود "ID" وليس "Name"'];
+    else if (msg.includes('Undeployed') || msg.includes('deployed'))
+      tips = ['💡 افتح app.metaapi.cloud → Accounts', '💡 اضغط على حسابك → Deploy', '💡 انتظر دقيقة ثم حاول مجدداً'];
+    else if (msg.includes('fetch') || msg.includes('network') || msg.includes('Region'))
+      tips = ['💡 تحقق من الاتصال بالإنترنت', '💡 قد تكون الشبكة تحجب agiliumtrade.ai'];
+    else
+      tips = ['💡 تحقق من Token و Account ID', '💡 تأكد أن الحساب Deployed في MetaApi Dashboard'];
+
+    showConnStatus('error', [`❌ فشل الاتصال: ${msg}`, ...tips]);
   }
 }
 
@@ -1754,4 +1844,5 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
+
 
