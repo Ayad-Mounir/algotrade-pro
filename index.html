@@ -768,9 +768,55 @@
     border-radius: 8px;
   }
 
+
+  /* ── TOAST NOTIFICATION ── */
+  #toast {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-120px);
+    z-index: 9999;
+    min-width: 280px;
+    max-width: 90vw;
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    direction: rtl;
+    text-align: right;
+    transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s;
+    opacity: 0;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    pointer-events: none;
+  }
+  #toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #toast.toast-success { background:#0f291f; border:1.5px solid var(--green); color:var(--green); }
+  #toast.toast-error   { background:#2a0f0f; border:1.5px solid var(--red);   color:#f87171; }
+  #toast.toast-info    { background:#0f1a2e; border:1.5px solid var(--blue);  color:var(--blue); }
+  #toast.toast-warn    { background:#2a1f00; border:1.5px solid var(--gold);  color:var(--gold); }
+  .toast-close {
+    float: left;
+    cursor: pointer;
+    opacity: 0.6;
+    margin-right: 8px;
+    pointer-events: auto;
+  }
+  .toast-close:hover { opacity: 1; }
+
 </style>
 </head>
 <body>
+<!-- TOAST -->
+<div id="toast">
+  <span class="toast-close" onclick="hideToast()">✕</span>
+  <div id="toastMsg"></div>
+</div>
+
 <div class="app">
 
   <!-- HEADER -->
@@ -1038,6 +1084,21 @@
 </div>
 
 <script>
+// ── TOAST SYSTEM ──
+let toastTimer = null;
+function showToast(type, lines, duration = 0) {
+  const toast = document.getElementById('toast');
+  const msg   = document.getElementById('toastMsg');
+  toast.className = `toast-${type} show`;
+  msg.innerHTML = Array.isArray(lines) ? lines.join('<br>') : lines;
+  clearTimeout(toastTimer);
+  if (duration > 0) toastTimer = setTimeout(hideToast, duration);
+}
+function hideToast() {
+  const toast = document.getElementById('toast');
+  if (toast) { toast.className = toast.className.replace(' show', ''); }
+}
+
 
 // ── SETTINGS ──
 let accountType = 'demo';
@@ -1385,44 +1446,44 @@ async function getAccountInfo() {
 
 // ── 3. اكتشف الـ Region تلقائياً بتجربة كل endpoint ──
 async function autoDetectRegion() {
-  addLog('sys', '🌐 اكتشاف الـ Region تلقائياً...');
+  addLog('sys', '🌐 اكتشاف الـ Region...');
 
   const regions = Object.entries(ALL_CLIENT_REGIONS);
-  const results = await Promise.allSettled(
-    regions.map(async ([name, base]) => {
+
+  // Race: نأخذ أول region يرد بأي HTTP status (حتى 401/404)
+  return new Promise((resolve, reject) => {
+    let settled = 0;
+    const total = regions.length;
+
+    regions.forEach(([name, base]) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
-      try {
-        const res = await fetch(
-          `${base}/users/current/accounts/${metaAccount}/account-information`,
-          {
-            headers: { 'auth-token': metaToken, 'Content-Type': 'application/json' },
-            signal: controller.signal
-          }
-        );
-        clearTimeout(timeout);
+      const timer = setTimeout(() => controller.abort(), 5000);
+
+      fetch(
+        `${base}/users/current/accounts/${metaAccount}/account-information`,
+        {
+          headers: { 'auth-token': metaToken, 'Content-Type': 'application/json' },
+          signal: controller.signal
+        }
+      )
+      .then(async res => {
+        clearTimeout(timer);
         const text = await res.text();
         let json;
         try { json = JSON.parse(text); } catch(e) { json = {}; }
-        // أي رد من الـ server (حتى 401/404) يعني الـ region صح
-        if (res.status !== 0) return { name, base, status: res.status, data: json };
-        throw new Error('no response');
-      } catch(e) {
-        clearTimeout(timeout);
-        throw e;
-      }
-    })
-  );
-
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    if (r.status === 'fulfilled') {
-      const { name, base, status, data } = r.value;
-      addLog('info', `📍 Region محدد: ${name} (HTTP ${status})`);
-      return { name, base, status, data };
-    }
-  }
-  throw new Error('لم يتم العثور على Region مناسب — تحقق من الاتصال بالإنترنت');
+        addLog('info', `📍 Region: ${name} (HTTP ${res.status})`);
+        resolve({ name, base, status: res.status, data: json });
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        settled++;
+        addLog('warn', `⚠️ Region ${name}: ${err.message || 'failed'}`);
+        if (settled === total) {
+          reject(new Error('فشل الاتصال بكل الـ regions — تحقق من الإنترنت أو إعدادات الشبكة'));
+        }
+      });
+    });
+  });
 }
 
 // ── 4. جلب معلومات الحساب (الرصيد) ──
@@ -1509,10 +1570,13 @@ async function placeOrder(symbol, type, lot) {
 
 // ── MAIN CONNECT ──
 async function handleConnect() {
+  console.log('[AlgoTrade] handleConnect called');
+
   metaToken   = document.getElementById('apiToken').value.trim();
   metaAccount = document.getElementById('accountId').value.trim();
 
   if (!metaToken || !metaAccount) {
+    showToast('error', '❌ يرجى إدخال API Token و Account ID');
     showConnStatus('error', ['❌ يرجى إدخال API Token و Account ID']);
     return;
   }
@@ -1523,14 +1587,13 @@ async function handleConnect() {
   saveSettings();
   addLog('info', '🔌 بدء عملية الاتصال...');
 
-  showConnStatus('info', [
-    '⏳ جاري الاتصال...',
-    `🔑 Account: ${metaAccount.slice(0,8)}...`
-  ]);
+  showToast('info', ['⏳ جاري الاتصال...', `🔑 ${metaAccount.slice(0,8)}...`]);
+  showConnStatus('info', ['⏳ جاري الاتصال...', `🔑 Account: ${metaAccount.slice(0,8)}...`]);
 
   try {
 
     // ── الخطوة 1: اكتشاف الـ Region ──
+    showToast('info', '🌐 اكتشاف الـ Region... (5-10 ثواني)');
     showConnStatus('info', ['🌐 اكتشاف الـ Region...', '(قد يستغرق 5-10 ثواني)']);
     let regionResult;
     try {
@@ -1595,6 +1658,7 @@ async function handleConnect() {
     }
     addLog('sys',  '🟢 النظام جاهز');
 
+    showToast('success', `✅ متصل — ${broker} | ${regionResult.name}`, 5000);
     showConnStatus('success', [
       `✅ متصل — ${broker}`,
       `📍 Region: ${regionResult.name}`,
@@ -1611,7 +1675,9 @@ async function handleConnect() {
     if (btn) { btn.disabled = false; btn.textContent = '🔌 اتصال'; }
 
     const msg = e.message || String(e);
+    console.error('[AlgoTrade] Connection error:', e);
     addLog('warn', `❌ ${msg}`);
+    showToast('error', `❌ ${msg.slice(0, 120)}`);
 
     // تحليل نوع الخطأ لرسالة مفيدة
     let tips = [];
@@ -1844,5 +1910,6 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
+
 
 
