@@ -1199,7 +1199,7 @@ let botRunning = false;
 let botInterval = null;
 let stats = { total: 0, buy: 0, sell: 0 };
 let priceHistory = {};
-SYMBOLS.forEach(s => { priceHistory[s.id] = [s.price]; });
+// priceHistory يُبنى ديناميكياً — يُضاف لكل زوج عند استلام السعر الأول
 
 // ── BROKER SYMBOL BROWSER ──
 
@@ -1708,13 +1708,14 @@ function handleDisconnect() {
 function setStatus(on) {
   const dot = document.getElementById('mainDot');
   const txt = document.getElementById('mainStatus');
-  dot.className = 'status-dot ' + (on ? 'connected' : 'error');
+  dot.className = 'status-dot ' + (on ? 'connected' : '');
   txt.textContent = on ? 'متصل' : 'غير متصل';
 }
 
 // ── BOT ──
 function toggleBot() {
-  if (!connected) { addLog('warn', '⚠️ يجب الاتصال أولاً'); return; }
+  if (!connected) { addLog('warn', '⚠️ يجب الاتصال أولاً'); showToast('warn', '⚠️ اتصل بالبروكر أولاً'); return; }
+  if (!botRunning && selectedSymbols.size === 0) { addLog('warn', '⚠️ اختر زوجاً واحداً على الأقل'); showToast('warn', '⚠️ اختر زوجاً واحداً على الأقل للتداول'); return; }
   botRunning = !botRunning;
   updateBotBtn();
   if (botRunning) {
@@ -1736,114 +1737,101 @@ function updateBotBtn() {
 
 async function runCycle() {
   const period = parseInt(document.getElementById('maPeriod').value) || 20;
-  const lot = parseFloat(document.getElementById('lotSize').value) || 0.01;
+  const lot    = parseFloat(document.getElementById('lotSize').value)  || 0.01;
   const timeframe = document.getElementById('timeframe').value;
   const rows = [];
 
   for (const sym of selectedSymbols) {
-    const id = sym; // الاسم الحقيقي من البروكر مباشرة
-    const sym = SYMBOLS.find(s => s.id === id);
-    if (!sym) continue;
-
     try {
-      // تخطي الأزواج غير الموجودة في البروكر
-      const brokerSym = getBrokerSymbol(id);
-      if (!brokerSymbolMap[id]) {
-        addLog('warn', `⏭️ تخطي ${id} — غير موجود في حسابك`);
-        continue;
-      }
-      // 1. جلب السعر الحالي الحقيقي
-      const priceData = await fetchPrice(brokerSym);
+      // 1. جلب السعر الحالي من البروكر
+      const priceData = await fetchPrice(sym);
       let currentPrice;
 
-      if (priceData && priceData.bid) {
-        currentPrice = +(priceData.bid);
+      if (priceData && (priceData.bid || priceData.ask)) {
+        currentPrice = +(priceData.bid || priceData.ask);
       } else {
-        // fallback: استخدم آخر سعر محفوظ مع تحريك بسيط
-        const last = priceHistory[id][priceHistory[id].length - 1];
-        currentPrice = +(last + (Math.random() - 0.5) * last * 0.0001)
-          .toFixed(id === 'BTCUSD' ? 0 : id === 'XAUUSD' ? 2 : 4);
-        addLog('warn', `⚠️ ${sym.name}: استخدام سعر تقريبي`);
+        // fallback: آخر سعر محفوظ مع تحريك طفيف
+        if (!priceHistory[sym] || !priceHistory[sym].length) {
+          addLog('warn', `⚠️ ${sym}: لا يوجد سعر متاح — تخطي`);
+          continue;
+        }
+        const last = priceHistory[sym][priceHistory[sym].length - 1];
+        currentPrice = +(last * (1 + (Math.random() - 0.5) * 0.0001));
+        addLog('warn', `⚠️ ${sym}: استخدام سعر تقريبي`);
       }
 
-      // 2. جلب الشمعات الحقيقية لحساب MA
-      const candles = await fetchCandles(brokerSym, timeframe, period + 5);
+      // تهيئة وتحديث priceHistory
+      if (!priceHistory[sym]) priceHistory[sym] = [];
+      priceHistory[sym].push(currentPrice);
+      if (priceHistory[sym].length > 100) priceHistory[sym].shift();
+
+      // 2. جلب الشمعات لحساب MA
+      const candles = await fetchCandles(sym, timeframe, period + 5);
       let ma;
 
       if (candles.length >= period) {
         const closes = candles.slice(-period).map(c => c.close);
-        ma = +(closes.reduce((a, b) => a + b, 0) / closes.length)
-          .toFixed(id === 'BTCUSD' ? 0 : id === 'XAUUSD' ? 2 : 4);
-        addLog('sys', `📊 ${sym.name}: ${candles.length} شمعة حقيقية`);
+        ma = closes.reduce((a, b) => a + b, 0) / closes.length;
+        addLog('sys', `📊 ${sym}: ${candles.length} شمعة حقيقية`);
       } else {
         // fallback MA من priceHistory
-        const history = priceHistory[id];
-        const slice = history.slice(-period);
-        ma = +(slice.reduce((a, b) => a + b, 0) / slice.length)
-          .toFixed(id === 'BTCUSD' ? 0 : id === 'XAUUSD' ? 2 : 4);
+        const slice = priceHistory[sym].slice(-Math.max(period, 1));
+        if (!slice.length) continue;
+        ma = slice.reduce((a, b) => a + b, 0) / slice.length;
       }
 
-      priceHistory[id].push(currentPrice);
-      if (priceHistory[id].length > 100) priceHistory[id].shift();
-
       // 3. استراتيجية MA
-      const diff = currentPrice - ma;
+      const diff      = currentPrice - ma;
       const threshold = ma * 0.0005;
       let action, badge, logType;
 
       if (diff > threshold) {
         action = 'BUY';
-        badge = `<span class="badge badge-buy">🟢 شراء ${lot}</span>`;
+        badge  = `<span class="badge badge-buy">🟢 شراء ${lot}</span>`;
         logType = 'buy';
         stats.buy++; stats.total++;
 
-        // 4. تنفيذ الصفقة الحقيقية
-        const order = await placeOrder(brokerSym, 'BUY', lot);
+        const order = await placeOrder(sym, 'BUY', lot);
         if (order && (order.orderId || order.positionId || order.numericCode === 0 || order.tradeExecuted)) {
-          addLog('buy', `✅ BUY ${sym.name} @ ${formatPrice(id, currentPrice)} | ID: ${order.orderId || order.positionId || 'OK'}`);
+          addLog('buy',  `✅ BUY ${sym} @ ${formatPrice(sym, currentPrice)} | ID: ${order.orderId || order.positionId || 'OK'}`);
         } else if (order) {
-          addLog('warn', `⚠️ BUY ${sym.name} - رد غير متوقع: ${JSON.stringify(order).slice(0,80)}`);
+          addLog('warn', `⚠️ BUY ${sym} — رد غير متوقع: ${JSON.stringify(order).slice(0,80)}`);
         }
 
       } else if (diff < -threshold) {
         action = 'SELL';
-        badge = `<span class="badge badge-sell">🔴 بيع ${lot}</span>`;
+        badge  = `<span class="badge badge-sell">🔴 بيع ${lot}</span>`;
         logType = 'sell';
         stats.sell++; stats.total++;
 
-        const order = await placeOrder(brokerSym, 'SELL', lot);
+        const order = await placeOrder(sym, 'SELL', lot);
         if (order && (order.orderId || order.positionId || order.numericCode === 0 || order.tradeExecuted)) {
-          addLog('sell', `✅ SELL ${sym.name} @ ${formatPrice(id, currentPrice)} | ID: ${order.orderId || order.positionId || 'OK'}`);
+          addLog('sell', `✅ SELL ${sym} @ ${formatPrice(sym, currentPrice)} | ID: ${order.orderId || order.positionId || 'OK'}`);
         } else if (order) {
-          addLog('warn', `⚠️ SELL ${sym.name} - رد غير متوقع: ${JSON.stringify(order).slice(0,80)}`);
+          addLog('warn', `⚠️ SELL ${sym} — رد غير متوقع: ${JSON.stringify(order).slice(0,80)}`);
         }
 
       } else {
-        action = 'WAIT';
-        badge = `<span class="badge badge-wait">⏳ انتظار</span>`;
+        action  = 'WAIT';
+        badge   = `<span class="badge badge-wait">⏳ انتظار</span>`;
         logType = 'sys';
       }
-
-      // تحديث السعر في قائمة الأزواج
-      const priceEl = document.getElementById(`price-${id}`);
-      if (priceEl) priceEl.textContent = formatPrice(id, currentPrice);
 
       rows.push({ sym, currentPrice, ma, badge, action, logType });
 
     } catch(e) {
-      addLog('warn', `⚠️ خطأ في ${sym.name}: ${e.message}`);
+      addLog('warn', `⚠️ خطأ في ${sym}: ${e.message}`);
     }
   }
 
   // تحديث الجدول
   if (rows.length > 0) {
-    const tbody = document.getElementById('signalsBody');
-    tbody.innerHTML = rows.map(r => `
+    document.getElementById('signalsBody').innerHTML = rows.map(r => `
       <tr class="new-row">
-        <td style="font-weight:700;font-family:var(--mono)">${r.sym.name}</td>
-        <td style="color:var(--text)">${formatPrice(r.sym.id, r.currentPrice)}</td>
-        <td style="color:var(--text-soft)">${formatPrice(r.sym.id, r.ma)}</td>
-        <td style="color:${r.currentPrice > r.ma ? 'var(--green)' : 'var(--red)'}; font-size:10px;">
+        <td style="font-weight:700;font-family:var(--mono)">${r.sym}</td>
+        <td style="color:var(--text)">${formatPrice(r.sym, r.currentPrice)}</td>
+        <td style="color:var(--text-soft)">${formatPrice(r.sym, r.ma)}</td>
+        <td style="color:${r.currentPrice > r.ma ? 'var(--green)' : 'var(--red)'};font-size:10px;">
           ${r.currentPrice > r.ma ? '▲ فوق MA' : '▼ تحت MA'}
         </td>
         <td>${r.badge}</td>
@@ -1852,12 +1840,9 @@ async function runCycle() {
     `).join('');
   }
 
-  // Update stats
   document.getElementById('statTotal').textContent = stats.total;
-  document.getElementById('statBuy').textContent = stats.buy;
-  document.getElementById('statSell').textContent = stats.sell;
-
-  // Re-render charts
+  document.getElementById('statBuy').textContent   = stats.buy;
+  document.getElementById('statSell').textContent  = stats.sell;
   renderMiniCharts();
 }
 
@@ -1878,9 +1863,22 @@ function clearConsole() {
 
 // ── HELPERS ──
 function formatPrice(id, price) {
-  if (id === 'BTCUSD') return price.toLocaleString('en-US', { maximumFractionDigits: 0 });
-  if (id === 'XAUUSD' || id === 'NASDAQ') return price.toFixed(2);
-  if (id === 'USDJPY') return price.toFixed(3);
+  if (price === null || price === undefined || isNaN(+price)) return '—';
+  price = +price;
+  const s = (id || '').toUpperCase();
+  // Crypto — بدون كسور
+  if (s.includes('BTC') || s.includes('XBT') || s.includes('ETH'))
+    return price.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  // Metals & Indices — كسرين
+  if (s.includes('XAU') || s.includes('GOLD') || s.includes('XAG') ||
+      s.includes('NAS') || s.includes('NDX') || s.includes('US100') ||
+      s.includes('DAX') || s.includes('GER') || s.includes('SP5')  ||
+      s.includes('US500') || s.includes('US30') || s.includes('DOW') ||
+      s.includes('FTSE')  || s.includes('UK100') || s.includes('CAC'))
+    return price.toFixed(2);
+  // JPY — ثلاثة كسور
+  if (s.includes('JPY')) return price.toFixed(3);
+  // Forex عام — أربعة كسور
   return price.toFixed(4);
 }
 
