@@ -808,6 +808,38 @@
   }
   .toast-close:hover { opacity: 1; }
 
+
+  /* ── PAPER TRADING BADGE ── */
+  .paper-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 10px; font-family: var(--mono);
+    background: #4d9fff20; border: 1px solid #4d9fff50;
+    color: var(--blue); white-space: nowrap;
+  }
+  .td-info-box {
+    background: #4d9fff08; border: 1px solid #4d9fff25;
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 11px; color: #7ab8ff; line-height: 1.9;
+    font-family: var(--mono); margin-top: 10px;
+  }
+  .mode-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-bottom: 16px;
+  }
+  .mode-option {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 10px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .mode-option.active {
+    border-color: var(--blue); background: var(--blue-dim);
+  }
+  .mode-icon { font-size: 20px; }
+  .mode-name { font-size: 13px; font-weight: 700; color: var(--text); }
+  .mode-desc { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+  .mode-check { color: var(--blue); font-weight: 700; margin-right: auto; }
 </style>
 </head>
 <body>
@@ -854,6 +886,58 @@
 
         <div id="settingsBody">
 
+
+          <!-- MODE SELECTOR -->
+          <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)">
+            <div class="settings-step" style="margin-bottom:10px">
+              <div class="step-num" style="background:var(--blue-dim);border-color:var(--blue);color:var(--blue)">⚡</div>
+              <div class="step-label">وضع التشغيل</div>
+            </div>
+            <div class="mode-row">
+              <div class="mode-option" id="opt-mode-metaapi" onclick="selectMode('metaapi')">
+                <div class="mode-icon">🔌</div>
+                <div style="flex:1">
+                  <div class="mode-name">MetaApi</div>
+                  <div class="mode-desc">تداول حقيقي MT4/5</div>
+                </div>
+                <div class="mode-check" id="chk-metaapi" style="display:none">✓</div>
+              </div>
+              <div class="mode-option active" id="opt-mode-td" onclick="selectMode('twelvedata')">
+                <div class="mode-icon">📊</div>
+                <div style="flex:1">
+                  <div class="mode-name">Twelve Data</div>
+                  <div class="mode-desc">🆓 تجريبي مجاني</div>
+                </div>
+                <div class="mode-check" id="chk-td">✓</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TD SECTION -->
+          <div id="tdSection">
+            <div class="settings-section">
+              <div class="settings-step">
+                <div class="step-num">1</div>
+                <div class="step-label">Twelve Data API Key</div>
+                <a href="https://twelvedata.com" target="_blank" class="step-link">🔗 الموقع</a>
+              </div>
+              <div class="field">
+                <label>API Key <span class="field-hint">مجاني — 800 طلب/يوم</span></label>
+                <div class="input-wrap">
+                  <button class="eye-btn" onclick="toggleVisibility('tdApiKey', this)">👁</button>
+                  <input type="password" id="tdApiKey" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" oninput="markUnsaved()" autocomplete="off"/>
+                </div>
+              </div>
+              <div class="td-info-box">
+                📊 Paper Trading — محاكاة بدون أموال حقيقية<br>
+                💰 رصيد افتراضي: <strong id="tdBalanceDisplay">10,000.00 USD</strong><br>
+                ⏱ دورة كل 60 ثانية (حد 8 طلبات/دقيقة)
+              </div>
+            </div>
+          </div>
+
+          <!-- METAAPI SECTION -->
+          <div id="metaapiSection" style="display:none">
           <!-- STEP 1 -->
           <div class="settings-section">
             <div class="settings-step">
@@ -931,6 +1015,8 @@
               </div>
             </div>
           </div>
+
+          </div><!-- end metaapiSection -->
 
           <hr class="divider">
 
@@ -1016,7 +1102,7 @@
     <div class="right-panel">
 
       <!-- STATS -->
-      <div class="stats-row">
+      <div class="stats-row" id="statsRow">
         <div class="stat-card">
           <div class="stat-value" id="statTotal" style="color:var(--blue)">0</div>
           <div class="stat-label">إجمالي الصفقات</div>
@@ -1032,6 +1118,10 @@
         <div class="stat-card">
           <div class="stat-value" id="statPairs" style="color:var(--gold)">0</div>
           <div class="stat-label">أزواج نشطة</div>
+        </div>
+        <div class="stat-card" id="paperCard" style="display:none">
+          <div class="stat-value" id="statVBalance" style="color:var(--blue);font-size:14px">10,000</div>
+          <div class="stat-label">الرصيد التجريبي</div>
         </div>
       </div>
 
@@ -1100,6 +1190,134 @@ function hideToast() {
 }
 
 
+
+// ── APP MODE ──
+let appMode = 'twelvedata'; // 'metaapi' | 'twelvedata'
+let tdApiKey = '';
+let virtualBalance = 10000.00;
+let openPositions = [];
+
+function selectMode(mode) {
+  appMode = mode;
+  const isTD = mode === 'twelvedata';
+  document.getElementById('opt-mode-metaapi').className   = 'mode-option' + (isTD ? '' : ' active');
+  document.getElementById('opt-mode-td').className        = 'mode-option' + (isTD ? ' active' : '');
+  document.getElementById('chk-metaapi').style.display    = isTD ? 'none' : 'block';
+  document.getElementById('chk-td').style.display         = isTD ? 'block' : 'none';
+  document.getElementById('tdSection').style.display      = isTD ? 'block' : 'none';
+  document.getElementById('metaapiSection').style.display = isTD ? 'none' : 'block';
+  const paperCard = document.getElementById('paperCard');
+  if (paperCard) paperCard.style.display = isTD ? 'flex' : 'none';
+  markUnsaved();
+}
+
+// ── TD API FETCH ──
+async function tdFetch(endpoint, params = {}) {
+  const url = new URL('https://api.twelvedata.com' + endpoint);
+  url.searchParams.set('apikey', tdApiKey);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error('TD HTTP ' + res.status);
+  const data = await res.json();
+  if (data.status === 'error' || data.code) throw new Error(data.message || 'Twelve Data error');
+  return data;
+}
+
+// ── TD CONNECT ──
+async function handleTDConnect() {
+  tdApiKey = (document.getElementById('tdApiKey')?.value || '').trim();
+  if (!tdApiKey) {
+    showToast('error', '❌ أدخل مفتاح Twelve Data API');
+    showConnStatus('error', ['❌ أدخل API Key', '💡 سجّل مجاناً في twelvedata.com']);
+    return;
+  }
+  const btn = document.querySelector('[onclick="handleConnect()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري التحقق...'; }
+  showToast('info', '⏳ التحقق من مفتاح Twelve Data...');
+  showConnStatus('info', ['⏳ جاري التحقق من API Key...']);
+  addLog('info', '🔌 الاتصال بـ Twelve Data...');
+  try {
+    const data = await tdFetch('/price', { symbol: 'EUR/USD' });
+    if (!data.price) throw new Error('رد غير متوقع من الـ API');
+    connected = true;
+    setStatus(true);
+    if (btn) { btn.disabled = false; btn.textContent = '🔌 اتصال'; }
+    addLog('buy',  '✅ متصل بـ Twelve Data API');
+    addLog('info', '📊 وضع: Paper Trading (محاكاة)');
+    addLog('info', `💰 الرصيد الافتراضي: ${virtualBalance.toFixed(2)} USD`);
+    showToast('success', '✅ Twelve Data — جاهز للتداول التجريبي', 5000);
+    showConnStatus('success', [
+      '✅ Twelve Data API — متصل',
+      '📊 Paper Trading — صفقات محاكاة',
+      `💰 الرصيد: ${virtualBalance.toFixed(2)} USD`,
+      '⏱ دورة كل 60 ثانية'
+    ]);
+    loadTDSymbols();
+  } catch(e) {
+    connected = false;
+    setStatus(false);
+    if (btn) { btn.disabled = false; btn.textContent = '🔌 اتصال'; }
+    addLog('warn', '❌ ' + e.message);
+    showToast('error', '❌ ' + e.message.slice(0, 100));
+    showConnStatus('error', [
+      '❌ فشل التحقق: ' + e.message,
+      '💡 تحقق من API Key في twelvedata.com',
+      '💡 تأكد أن الـ Key صحيح وفعّال'
+    ]);
+  }
+}
+
+// ── قائمة أزواج Twelve Data ──
+const TD_PAIRS = [
+  // Forex
+  'EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','USD/CHF','NZD/USD',
+  'EUR/GBP','EUR/JPY','GBP/JPY','EUR/AUD','AUD/JPY','CAD/JPY','CHF/JPY',
+  // Metals
+  'XAU/USD','XAG/USD',
+  // Crypto
+  'BTC/USD','ETH/USD','BNB/USD','SOL/USD','XRP/USD','ADA/USD','DOGE/USD',
+  // Indices
+  'NDX','SPX','DJI','DAX','FTSE'
+];
+
+function loadTDSymbols() {
+  addLog('sys', `📋 تحميل ${TD_PAIRS.length} زوج من Twelve Data`);
+  loadBrokerSymbolsUI(TD_PAIRS);
+}
+
+// ── TD fetchPrice ──
+async function tdFetchPrice(symbol) {
+  try {
+    const data = await tdFetch('/price', { symbol });
+    const p = parseFloat(data.price);
+    if (isNaN(p)) return null;
+    return { bid: p, ask: p };
+  } catch(e) { return null; }
+}
+
+// ── TD fetchCandles ──
+async function tdFetchCandles(symbol, timeframe, count) {
+  try {
+    const tfMap = { '1m':'1min','5m':'5min','15m':'15min','1h':'1h' };
+    const data = await tdFetch('/time_series', {
+      symbol,
+      interval: tfMap[timeframe] || '1min',
+      outputsize: Math.min(count, 30)
+    });
+    if (!data.values || !Array.isArray(data.values)) return [];
+    // TD يرجع الأحدث أولاً — نعكس الترتيب
+    return data.values.reverse().map(v => ({
+      open:  parseFloat(v.open),
+      high:  parseFloat(v.high),
+      low:   parseFloat(v.low),
+      close: parseFloat(v.close)
+    }));
+  } catch(e) {
+    addLog('warn', `⚠️ TD candles ${symbol}: ${e.message}`);
+    return [];
+  }
+}
+
 // ── SETTINGS ──
 let accountType = 'demo';
 let settingsOpen = true;
@@ -1108,22 +1326,27 @@ let hasUnsaved = false;
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem('algotrade_settings') || '{}');
-    if (s.token) document.getElementById('apiToken').value = s.token;
-    if (s.account) document.getElementById('accountId').value = s.account;
-    if (s.broker) document.getElementById('brokerServer').value = s.broker;
-    // region يُكتشف تلقائياً — لا نحتاج تحميله
-    if (s.type) selectAccountType(s.type, true);
-    if (s.token || s.account) showSavedBadge();
-  } catch(e) {}
+    if (s.token)   document.getElementById('apiToken').value   = s.token;
+    if (s.account) document.getElementById('accountId').value  = s.account;
+    if (s.broker)  document.getElementById('brokerServer').value = s.broker;
+    if (s.tdKey)   document.getElementById('tdApiKey').value   = s.tdKey;
+    if (s.type)    selectAccountType(s.type, true);
+    // تحميل الوضع
+    if (s.mode) selectMode(s.mode);
+    else selectMode('twelvedata'); // افتراضي
+    if (s.token || s.account || s.tdKey) showSavedBadge();
+  } catch(e) { selectMode('twelvedata'); }
 }
 
 function saveSettings() {
   const s = {
-    token: document.getElementById('apiToken').value,
+    token:   document.getElementById('apiToken').value,
     account: document.getElementById('accountId').value,
-    broker: document.getElementById('brokerServer').value,
-    region: '', // يُكتشف تلقائياً
-    type: accountType
+    broker:  document.getElementById('brokerServer').value,
+    tdKey:   document.getElementById('tdApiKey')?.value || '',
+    region:  '',
+    type:    accountType,
+    mode:    appMode
   };
   localStorage.setItem('algotrade_settings', JSON.stringify(s));
   hasUnsaved = false;
@@ -1204,18 +1427,23 @@ let priceHistory = {};
 // ── BROKER SYMBOL BROWSER ──
 
 // تصنيف الأزواج حسب الاسم
+function getBrokerSymbol(id) {
+  return id;
+}
+
 function categorizeSymbol(sym) {
-  const s = sym.toUpperCase();
-  const forex = ['EUR','GBP','AUD','NZD','CAD','CHF','JPY','USD','MXN','NOK','SEK','DKK','SGD','HKD','ZAR','TRY','PLN','HUF'];
-  const metals = ['XAU','XAG','XPT','XPD','GOLD','SILVER','PLATINUM'];
-  const crypto = ['BTC','ETH','LTC','XRP','ADA','DOT','BNB','SOL','DOGE','MATIC','LINK'];
-  const indices = ['NAS','NDX','SPX','SP5','DOW','DAX','FTSE','CAC','NIK','ASX','US30','US100','US500','GER','UK','JP','AUS','FRA'];
+  // دعم صيغة TD مثل EUR/USD — نحذف الـ /
+  const s = sym.toUpperCase().replace('/','');
+  const metals  = ['XAU','XAG','XPT','XPD','GOLD','SILVER','PLATINUM'];
+  const crypto  = ['BTC','ETH','LTC','XRP','ADA','DOT','BNB','SOL','DOGE','MATIC','LINK','XBT'];
+  const indices = ['NDX','SPX','DJI','DAX','FTSE','CAC','NAS','NIK','ASX','US30','US100','US500','GER','UK100','SP5'];
   const energy  = ['OIL','WTI','BRENT','GAS','NGAS','CRUDE','USOIL','UKOIL'];
+  const forex   = ['EUR','GBP','AUD','NZD','CAD','CHF','JPY','USD','MXN','NOK','SEK','DKK','SGD','HKD','ZAR','TRY','PLN','HUF'];
 
   if (metals.some(m  => s.startsWith(m) || s.includes(m))) return 'Metals';
   if (crypto.some(c  => s.startsWith(c) || s.includes(c))) return 'Crypto';
   if (energy.some(e  => s.startsWith(e) || s.includes(e))) return 'Energy';
-  if (indices.some(i => s.startsWith(i) || s.includes(i))) return 'Indices';
+  if (indices.some(i => s === i || s.startsWith(i)))        return 'Indices';
   if (forex.some(f   => s.startsWith(f)))                   return 'Forex';
   return 'Other';
 }
@@ -1527,6 +1755,7 @@ async function fetchBrokerSymbols() {
 function getBrokerSymbol(id) { return id; }
 
 async function fetchCandles(symbol, timeframe = '1m', count = 50) {
+  if (appMode === 'twelvedata') return await tdFetchCandles(symbol, timeframe, count);
   try {
     const tf = { '1m':'1m', '5m':'5m', '15m':'15m', '1h':'1h' }[timeframe] || '1m';
     const data = await metaFetch(
@@ -1541,6 +1770,7 @@ async function fetchCandles(symbol, timeframe = '1m', count = 50) {
 }
 
 async function fetchPrice(symbol) {
+  if (appMode === 'twelvedata') return await tdFetchPrice(symbol);
   try {
     const data = await metaFetch(
       metaClientBase,
@@ -1551,6 +1781,21 @@ async function fetchPrice(symbol) {
 }
 
 async function placeOrder(symbol, type, lot) {
+  // Paper Trading — وضع Twelve Data
+  if (appMode === 'twelvedata') {
+    const price  = priceHistory[symbol]?.[priceHistory[symbol].length - 1] || 0;
+    const spread = price * 0.0002; // محاكاة الـ spread
+    virtualBalance -= spread;
+    openPositions.push({ symbol, type, lot, price, time: getTime() });
+    // تحديث الرصيد في الواجهة
+    const el = document.getElementById('tdBalanceDisplay');
+    if (el) el.textContent = virtualBalance.toFixed(2) + ' USD';
+    addLog('sys', `📝 Paper: ${type} ${symbol} @ ${formatPrice(symbol,price)} | الرصيد: ${virtualBalance.toFixed(2)}`);
+    const balEl = document.getElementById('statVBalance');
+    if (balEl) balEl.textContent = virtualBalance.toFixed(2);
+    return { orderId: 'PAPER-' + Date.now().toString().slice(-6), tradeExecuted: true };
+  }
+  // MetaApi — تداول حقيقي
   try {
     const order = {
       symbol,
@@ -1570,7 +1815,8 @@ async function placeOrder(symbol, type, lot) {
 
 // ── MAIN CONNECT ──
 async function handleConnect() {
-  console.log('[AlgoTrade] handleConnect called');
+  console.log('[AlgoTrade] handleConnect called, mode:', appMode);
+  if (appMode === 'twelvedata') { await handleTDConnect(); return; }
 
   metaToken   = document.getElementById('apiToken').value.trim();
   metaAccount = document.getElementById('accountId').value.trim();
@@ -1719,9 +1965,11 @@ function toggleBot() {
   botRunning = !botRunning;
   updateBotBtn();
   if (botRunning) {
-    addLog('info', `▶ تم تشغيل البوت على ${selectedSymbols.size} أزواج (حقيقي)`);
+    const cycleMs = appMode === 'twelvedata' ? 60000 : 10000;
+    const modeLabel = appMode === 'twelvedata' ? 'Paper Trading — دورة/60ث' : 'MetaApi — دورة/10ث';
+    addLog('info', `▶ البوت يعمل على ${selectedSymbols.size} أزواج | ${modeLabel}`);
     runCycle();
-    botInterval = setInterval(runCycle, 10000);
+    botInterval = setInterval(runCycle, cycleMs);
   } else {
     clearInterval(botInterval);
     botInterval = null;
@@ -1865,20 +2113,19 @@ function clearConsole() {
 function formatPrice(id, price) {
   if (price === null || price === undefined || isNaN(+price)) return '—';
   price = +price;
-  const s = (id || '').toUpperCase();
-  // Crypto — بدون كسور
-  if (s.includes('BTC') || s.includes('XBT') || s.includes('ETH'))
-    return price.toLocaleString('en-US', { maximumFractionDigits: 0 });
-  // Metals & Indices — كسرين
-  if (s.includes('XAU') || s.includes('GOLD') || s.includes('XAG') ||
-      s.includes('NAS') || s.includes('NDX') || s.includes('US100') ||
-      s.includes('DAX') || s.includes('GER') || s.includes('SP5')  ||
-      s.includes('US500') || s.includes('US30') || s.includes('DOW') ||
-      s.includes('FTSE')  || s.includes('UK100') || s.includes('CAC'))
+  const s = (id || '').toUpperCase().replace('/','');
+  // Crypto
+  if (s.startsWith('BTC') || s.startsWith('XBT') || s.startsWith('ETH') ||
+      s.startsWith('BNB') || s.startsWith('SOL') || s.startsWith('ADA'))
+    return price.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  // Metals & Indices
+  if (s.includes('XAU') || s.includes('XAG') || s.includes('GOLD') ||
+      s === 'NDX' || s === 'SPX' || s === 'DJI' || s === 'DAX' || s === 'FTSE' ||
+      s.includes('NAS') || s.includes('US100') || s.includes('GER') ||
+      s.includes('SP5') || s.includes('US30')  || s.includes('FTSE') || s.includes('UK100'))
     return price.toFixed(2);
-  // JPY — ثلاثة كسور
+  // JPY
   if (s.includes('JPY')) return price.toFixed(3);
-  // Forex عام — أربعة كسور
   return price.toFixed(4);
 }
 
